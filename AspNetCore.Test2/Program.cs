@@ -34,6 +34,9 @@ namespace AspNetCore.Test2
             await channel.BasicConsumeAsync("hello", autoAck: true, consumer: consumer);
             */
 
+            /*
+             * Work Queue
+             * 
             await channel.QueueDeclareAsync(queue: "task_queue", durable: true, exclusive: false, autoDelete: false, arguments: null);
 
             await channel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false);
@@ -57,6 +60,29 @@ namespace AspNetCore.Test2
             };
 
             await channel.BasicConsumeAsync("task_queue", autoAck: false, consumer: consumer);
+
+            */
+
+
+            await channel.ExchangeDeclareAsync(exchange: "logs", type: ExchangeType.Fanout);
+
+            //declare a server-named queue
+            QueueDeclareOk queueDeckareResult = await channel.QueueDeclareAsync();
+            string queueName = queueDeckareResult.QueueName;
+            await channel.QueueBindAsync(queue: queueName, exchange: "logs", routingKey: string.Empty);
+
+            Console.WriteLine(" [*] Waiting for logs.");
+
+            var consumer = new AsyncEventingBasicConsumer(channel);
+            consumer.ReceivedAsync += (model, ea) =>
+            {
+                byte[] body = ea.Body.ToArray();
+                var message = Encoding.UTF8.GetString(body);
+                Console.WriteLine($" [x] {message}");
+                return Task.CompletedTask;
+            };
+
+            await channel.BasicConsumeAsync(queueName, autoAck: true, consumer: consumer);
 
 
             Console.WriteLine(" Press [enter] to exit.");

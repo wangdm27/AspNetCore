@@ -25,6 +25,9 @@ namespace AspNetCore.Test
             Console.WriteLine($" [x] Sent {message}");
             */
 
+            /*
+             * Work Queue
+             * 
             await channel.QueueDeclareAsync(queue: "task_queue", durable: true, exclusive: false, autoDelete: false, arguments: null);
             for (int i = 0; i < 5; i++)
             {
@@ -37,6 +40,19 @@ namespace AspNetCore.Test
                 };
 
                 await channel.BasicPublishAsync(exchange: string.Empty, routingKey: "task_queue", mandatory: true, basicProperties: properties, body: body);
+                Console.WriteLine($" [x] Sent {message}");
+            }
+            */
+            //消费者要优于创建，否则推送的消息接收不到
+            await Task.Delay(1000);
+
+            await channel.ExchangeDeclareAsync(exchange: "logs", type: ExchangeType.Fanout);
+
+            for (int i = 0; i < 5; i++)
+            {
+                var message = GetMessage(i);
+                var body = Encoding.UTF8.GetBytes(message);
+                await channel.BasicPublishAsync(exchange: "logs", routingKey: string.Empty, body: body);
                 Console.WriteLine($" [x] Sent {message}");
             }
 
