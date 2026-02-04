@@ -42,6 +42,10 @@ namespace AspNetCore.Test3
             await channel.BasicConsumeAsync("task_queue", autoAck: false, consumer: consumer);
             */
 
+            /*
+             * Fanout Publish/Subscribe
+             * 
+
             await channel.ExchangeDeclareAsync(exchange: "logs", type: ExchangeType.Fanout);
 
             //declare a server-named queue
@@ -61,6 +65,7 @@ namespace AspNetCore.Test3
             };
 
             await channel.BasicConsumeAsync(queueName, autoAck: true, consumer: consumer);
+            */
 
             Console.WriteLine(" Press [enter] to exit.");
             Console.ReadLine();
