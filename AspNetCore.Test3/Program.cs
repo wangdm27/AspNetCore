@@ -1,6 +1,6 @@
-﻿using RabbitMQ.Client;
-using RabbitMQ.Client.Events;
-using System.Text;
+﻿using AspNetCore.RabbitMq;
+using Microsoft.Extensions.DependencyInjection;
+using static AspNetCore.Test3.DemoConsumer;
 
 namespace AspNetCore.Test3
 {
@@ -10,9 +10,9 @@ namespace AspNetCore.Test3
         {
             //Console.WriteLine("Hello, World!");
 
-            var factory = new ConnectionFactory() { HostName = "localhost" };
-            using var connection = await factory.CreateConnectionAsync();
-            using var channel = await connection.CreateChannelAsync();
+            //var factory = new ConnectionFactory() { HostName = "localhost" };
+            //using var connection = await factory.CreateConnectionAsync();
+            //using var channel = await connection.CreateChannelAsync();
 
             /*
              * Work Queue
@@ -66,6 +66,32 @@ namespace AspNetCore.Test3
 
             await channel.BasicConsumeAsync(queueName, autoAck: true, consumer: consumer);
             */
+
+
+            var services = new ServiceCollection();
+
+            services.AddUnifiedRabbitMq(opt =>
+            {
+                opt.HostName = "localhost";
+                opt.UserName = "guest";
+                opt.Password = "guest";
+            });
+
+            services.AddSingleton<IRabbitMqConsumer, DemoConsumer>();
+
+            var sp = services.BuildServiceProvider();
+
+
+            var consumer = sp.GetRequiredService<IRabbitMqConsumer>();
+            await consumer.StartAsync();
+
+
+            var publisher = sp.GetRequiredService<IRabbitMqPublisher>();
+            await publisher.PublishAsync(
+                exchange: "demo.exchange",
+                routingKey: "demo.key",
+                new DemoMessage { Text = "Hello RabbitMQ" });
+
 
             Console.WriteLine(" Press [enter] to exit.");
             Console.ReadLine();

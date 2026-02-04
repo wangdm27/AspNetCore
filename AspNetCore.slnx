@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="AspNetCore.RabbitMq/AspNetCore.RabbitMq.csproj" Id="6fe09926-c5f9-42f2-afc7-fb15bdad8c36" />
   <Project Path="AspNetCore.Test/AspNetCore.Test.csproj" />
   <Project Path="AspNetCore.Test2/AspNetCore.Test2.csproj" />
   <Project Path="AspNetCore.Test3/AspNetCore.Test3.csproj" Id="aa9b9ee9-cc96-4164-88bc-3b6bfbc179ae" />
