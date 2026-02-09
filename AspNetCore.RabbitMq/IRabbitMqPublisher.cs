@@ -1,4 +1,4 @@
-﻿using RabbitMQ.Client;
+using RabbitMQ.Client;
 
 namespace AspNetCore.RabbitMq
 {
@@ -8,6 +8,15 @@ namespace AspNetCore.RabbitMq
             string exchange,
             string routingKey,
             T message,
-            Action<IBasicProperties>? props = null);
+            Action<IBasicProperties>? props = null,
+            CancellationToken cancellationToken = default);
+
+        ValueTask PublishRawAsync(
+            string exchange,
+            string routingKey,
+            ReadOnlyMemory<byte> body,
+            IDictionary<string, object?>? headers = null,
+            Action<IBasicProperties>? props = null,
+            CancellationToken cancellationToken = default);
     }
 }
