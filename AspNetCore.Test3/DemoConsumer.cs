@@ -6,26 +6,18 @@ using static AspNetCore.Test3.DemoConsumer;
 
 namespace AspNetCore.Test3
 {
-    public class DemoConsumer : RabbitMqConsumerBase<DemoMessage>
+    public class DemoConsumer : RabbitMqConsumerBase<string>
     {
-        public DemoConsumer(IRabbitMqConnection connection, RabbitMqOptions options) : base(connection, options)
-        {
-        }
+        public DemoConsumer(IRabbitMqConnection conn, RabbitMqOptions opts) : base(conn, opts) { }
 
+        protected override string Queue => "demo.queue";
         protected override string Exchange => "demo.exchange";
         protected override string RoutingKey => "demo.key";
-        protected override string Queue => "demo.queue";
 
-
-        protected override Task HandleAsync(DemoMessage message, CancellationToken ct)
+        protected override Task HandleAsync(string message, CancellationToken ct)
         {
-            Console.WriteLine($"收到：{message.Text}");
+            Console.WriteLine($"Received message: {message}");
             return Task.CompletedTask;
-        }
-
-        public class DemoMessage
-        {
-            public string Text { get; set; } = null!;
         }
 
     }

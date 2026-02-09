@@ -7,16 +7,10 @@ using System.Text.Json;
 
 namespace AspNetCore.RabbitMq
 {
-    public abstract class RabbitMqConsumerBase<T> : IRabbitMqConsumer where T : class
+    public abstract class RabbitMqConsumerBase<T> : IRabbitMqConsumer
     {
         private readonly IRabbitMqConnection _connection;
         private readonly RabbitMqOptions _options;
-
-
-        protected abstract string Queue { get; }
-        protected abstract string Exchange { get; }
-        protected abstract string RoutingKey { get; }
-
 
         protected RabbitMqConsumerBase(IRabbitMqConnection connection, RabbitMqOptions options)
         {
@@ -24,63 +18,75 @@ namespace AspNetCore.RabbitMq
             _options = options;
         }
 
+        protected abstract string Queue { get; }
+        protected abstract string Exchange { get; }
+        protected abstract string RoutingKey { get; }
+
+        protected abstract Task HandleAsync(T message, CancellationToken ct);
+
         public async Task StartAsync(CancellationToken cancellationToken = default)
         {
             var conn = await _connection.GetConnectionAsync();
             var channel = await conn.CreateChannelAsync();
 
-            // 1️ 自动声明 Exchange
-            await channel.ExchangeDeclareAsync(
-                exchange: Exchange,
-                type: ExchangeType.Direct,
-                durable: true,
-                autoDelete: false,
-                arguments: null);
+            // 死信队列参数
+            var args = new Dictionary<string, object?>();
+            if (_options.EnableDeadLetter)
+            {
+                args["x-dead-letter-exchange"] = _options.DeadLetterExchange;
+                args["x-dead-letter-routing-key"] = _options.DeadLetterQueue;
+                args["x-message-ttl"] = _options.DefaultMessageTTL;
 
-            // 2️ 自动声明 Queue
-            await channel.QueueDeclareAsync(
-                queue: Queue,
-                durable: true,
-                exclusive: false,
-                autoDelete: false,
-                arguments: null);
 
-            // 3️ 绑定 Queue 到 Exchange
-            await channel.QueueBindAsync(
-                queue: Queue,
-                exchange: Exchange,
-                routingKey: RoutingKey,
-                arguments: null);
+                await channel.ExchangeDeclareAsync(_options.DeadLetterExchange, ExchangeType.Direct, true, false);
+                await channel.QueueDeclareAsync(_options.DeadLetterQueue, true, false, false);
+                await channel.QueueBindAsync(_options.DeadLetterQueue, _options.DeadLetterExchange, _options.DeadLetterQueue);
+            }
+
+
+            await channel.ExchangeDeclareAsync(Exchange, ExchangeType.Direct, true, false);
+            await channel.QueueDeclareAsync(Queue, true, false, false, args);
+            await channel.QueueBindAsync(Queue, Exchange, RoutingKey);
+
 
             await channel.BasicQosAsync(0, _options.PrefetchCount, false);
 
-            var consumer = new AsyncEventingBasicConsumer(channel);
 
+            var consumer = new AsyncEventingBasicConsumer(channel);
             consumer.ReceivedAsync += async (_, ea) =>
             {
-                try
+                int retry = 0;
+                while (retry <= _options.RetryCount)
                 {
-                    var msg = JsonSerializer.Deserialize<T>(ea.Body.Span)!;
-                    await HandleAsync(msg, cancellationToken);
-                    await channel.BasicAckAsync(ea.DeliveryTag, false);
-                }
-                catch
-                {
-                    await channel.BasicNackAsync(ea.DeliveryTag, false, true);
+                    try
+                    {
+                        T msg = typeof(T) == typeof(string)
+                        ? (T)(object)Encoding.UTF8.GetString(ea.Body.ToArray())
+                        : JsonSerializer.Deserialize<T>(ea.Body.Span)!;
+
+
+                        await HandleAsync(msg, cancellationToken);
+
+
+                        await channel.BasicAckAsync(ea.DeliveryTag, false);
+                        return;
+                    }
+                    catch
+                    {
+                        retry++;
+                        if (retry > _options.RetryCount)
+                        {
+                            await channel.BasicNackAsync(ea.DeliveryTag, false, false);
+                            return;
+                        }
+
+
+                        await Task.Delay(1000, cancellationToken);
+                    }
                 }
             };
 
-            await channel.BasicConsumeAsync(
-                queue: Queue,
-                autoAck: false,
-                consumerTag: string.Empty,
-                noLocal: false,
-                exclusive: false,
-                arguments: null,
-                consumer: consumer,
-                cancellationToken: cancellationToken);
+            await channel.BasicConsumeAsync(Queue, false, consumer, cancellationToken);
         }
-
-        protected abstract Task HandleAsync(T message, CancellationToken ct);
     }
 }

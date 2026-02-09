@@ -4,10 +4,12 @@ namespace AspNetCore.RabbitMq
 {
     public interface IRabbitMqPublisher
     {
-        ValueTask PublishAsync<T>(
+        Task PublishAsync<T>(
             string exchange,
             string routingKey,
             T message,
-            Action<IBasicProperties>? props = null);
+            bool confirm = true,
+            int? delayMs = null,
+            CancellationToken cancellationToken = default);
     }
 }

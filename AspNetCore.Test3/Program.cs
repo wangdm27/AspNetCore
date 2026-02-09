@@ -1,6 +1,6 @@
 ﻿using AspNetCore.RabbitMq;
 using Microsoft.Extensions.DependencyInjection;
-using static AspNetCore.Test3.DemoConsumer;
+using Microsoft.Extensions.Hosting;
 
 namespace AspNetCore.Test3
 {
@@ -68,29 +68,37 @@ namespace AspNetCore.Test3
             */
 
 
-            var services = new ServiceCollection();
-
-            services.AddUnifiedRabbitMq(opt =>
+            var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
             {
-                opt.HostName = "localhost";
-                opt.UserName = "guest";
-                opt.Password = "guest";
-            });
-
-            services.AddSingleton<IRabbitMqConsumer, DemoConsumer>();
-
-            var sp = services.BuildServiceProvider();
+                var options = new RabbitMqOptions();
 
 
-            var consumer = sp.GetRequiredService<IRabbitMqConsumer>();
-            await consumer.StartAsync();
+                services.AddSingleton(options);
+                services.AddSingleton<IRabbitMqConnection, RabbitMqConnection>();
+                services.AddSingleton<IRabbitMqPublisher, RabbitMqPublisher>();
 
 
-            var publisher = sp.GetRequiredService<IRabbitMqPublisher>();
-            await publisher.PublishAsync(
-                exchange: "demo.exchange",
-                routingKey: "demo.key",
-                new DemoMessage { Text = "Hello RabbitMQ" });
+                services.Scan(scan => scan
+                .FromAssemblyOf<DemoConsumer>()
+                .AddClasses(c => c.AssignableTo<IRabbitMqConsumer>())
+                .AsImplementedInterfaces()
+                .WithSingletonLifetime());
+
+
+                services.AddHostedService<RabbitMqHostedService>();
+            })
+            .Build();
+
+
+            await host.StartAsync();
+
+
+            var publisher = host.Services.GetRequiredService<IRabbitMqPublisher>();
+            await publisher.PublishAsync("demo.exchange", "demo.key", "Hello RabbitMQ 7.x");
+
+
+            await host.WaitForShutdownAsync();
 
 
             Console.WriteLine(" Press [enter] to exit.");

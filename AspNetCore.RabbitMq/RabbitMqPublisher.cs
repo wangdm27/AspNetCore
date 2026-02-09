@@ -1,46 +1,86 @@
 ﻿using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
+using System.Text;
 using System.Text.Json;
 
 namespace AspNetCore.RabbitMq
 {
-    internal sealed class RabbitMqPublisher : IRabbitMqPublisher
+    public sealed class RabbitMqPublisher : IRabbitMqPublisher
     {
         private readonly IRabbitMqConnection _connection;
-
 
         public RabbitMqPublisher(IRabbitMqConnection connection)
         {
             _connection = connection;
         }
 
-
-        public async ValueTask PublishAsync<T>(string exchange, string routingKey, T message, Action<IBasicProperties>? props = null)
+        public async Task PublishAsync<T>(
+            string exchange,
+            string routingKey,
+            T message,
+            bool confirm = true,
+            int? delayMs = null,
+            CancellationToken cancellationToken = default)
         {
             var conn = await _connection.GetConnectionAsync();
-
-
-            // 7.x：CreateChannelAsync 取代 CreateModel
             await using var channel = await conn.CreateChannelAsync();
 
+            await channel.ExchangeDeclareAsync(exchange, ExchangeType.Direct, durable: true, autoDelete: false);
 
-            var body = JsonSerializer.SerializeToUtf8Bytes(message);
+            byte[] body = message is string s ? Encoding.UTF8.GetBytes(s) : JsonSerializer.SerializeToUtf8Bytes(message);
 
+            var props = new BasicProperties { Persistent = true };
 
-            var properties = new BasicProperties
+            if (delayMs.HasValue)
             {
-                Persistent = true
-            };
+                props.Headers = new Dictionary<string, object?> { ["x-delay"] = delayMs.Value };
+            }
 
 
-            props?.Invoke(properties);
+            if (!confirm)
+            {
+                await channel.BasicPublishAsync(exchange, routingKey, false, props, body);
+                return;
+            }
 
 
-            await channel.BasicPublishAsync(
-            exchange: exchange,
-            routingKey: routingKey,
-            mandatory: false,
-            basicProperties: properties,
-            body: body);
+            var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+
+            async Task AckHandler(object sender, BasicAckEventArgs ea)
+            {
+                tcs.TrySetResult(true);
+                await Task.CompletedTask;
+            }
+
+
+            async Task NackHandler(object sender, BasicNackEventArgs ea)
+            {
+                tcs.TrySetResult(false);
+                await Task.CompletedTask;
+            }
+
+
+            channel.BasicAcksAsync += AckHandler;
+            channel.BasicNacksAsync += NackHandler;
+
+
+            try
+            {
+                await channel.BasicPublishAsync(exchange, routingKey, false, props, body);
+
+
+                var confirmed = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+
+                if (!confirmed)
+                    throw new Exception("RabbitMQ publish nack received");
+            }
+            finally
+            {
+                channel.BasicAcksAsync -= AckHandler;
+                channel.BasicNacksAsync -= NackHandler;
+            }
         }
     }
 }
