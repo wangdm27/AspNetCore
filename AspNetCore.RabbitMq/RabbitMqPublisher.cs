@@ -1,17 +1,18 @@
-﻿using RabbitMQ.Client;
+using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using System.Text;
 using System.Text.Json;
+using RabbitMQ.Client;
 
 namespace AspNetCore.RabbitMq
 {
     public sealed class RabbitMqPublisher : IRabbitMqPublisher
     {
-        private readonly IRabbitMqConnection _connection;
+        private readonly IRabbitMqChannelPool _channelPool;
 
         public RabbitMqPublisher(IRabbitMqConnection connection)
         {
-            _connection = connection;
+            _channelPool = channelPool;
         }
 
         public async Task PublishAsync<T>(
@@ -41,6 +42,15 @@ namespace AspNetCore.RabbitMq
                 props.Headers = new Dictionary<string, object?> { ["x-delay"] = delayMs.Value };
             }
 
+        public async ValueTask PublishRawAsync(
+            string exchange,
+            string routingKey,
+            ReadOnlyMemory<byte> body,
+            IDictionary<string, object?>? headers = null,
+            Action<IBasicProperties>? props = null,
+            CancellationToken cancellationToken = default)
+        {
+            await using var lease = await _channelPool.RentAsync(cancellationToken);
 
             if (!confirm)
             {

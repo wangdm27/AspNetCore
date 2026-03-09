@@ -1,10 +1,10 @@
-ï»¿namespace AspNetCore.RabbitMq
+namespace AspNetCore.RabbitMq
 {
     public class RabbitMqOptions
     {
         public string HostName { get; set; } = "localhost";
-        public int Port { get; set; } = 5672;                 // RabbitMQ é»˜è®¤ç«¯å£
-        public string VirtualHost { get; set; } = "/";       // é»˜è®¤ vhost
+        public int Port { get; set; } = 5672;                 // RabbitMQ Ä¬ÈÏ¶Ë¿Ú
+        public string VirtualHost { get; set; } = "/";       // Ä¬ÈÏ vhost
         public string UserName { get; set; } = "guest";
         public string Password { get; set; } = "guest";
 
@@ -12,12 +12,17 @@
         public int RetryCount { get; set; } = 3;
         public bool AutoReconnect { get; set; } = true;
         public TimeSpan ReconnectInterval { get; set; } = TimeSpan.FromSeconds(5);
-        public ushort ConsumerConcurrency { get; set; } = 10; // å¼‚æ­¥æ¶ˆè´¹è€…å¹¶å‘
+        public ushort ConsumerConcurrency { get; set; } = 10; // Òì²½Ïû·ÑÕß²¢·¢
 
-        public bool EnableDeadLetter { get; set; } = true;
-        public string DeadLetterExchange { get; set; } = "dead.letter.exchange";
-        public string DeadLetterQueue { get; set; } = "dead.letter.queue";
-        public int DefaultMessageTTL { get; set; } = 60000; // ms
+        public ushort PrefetchCount { get; set; } = 10;
 
+        public bool AutomaticRecoveryEnabled { get; set; } = true;
+        public bool TopologyRecoveryEnabled { get; set; } = true;
+        public TimeSpan NetworkRecoveryInterval { get; set; } = TimeSpan.FromSeconds(10);
+
+        public int ChannelPoolSize { get; set; } = 16;
+
+        public TimeSpan OutboxDispatchInterval { get; set; } = TimeSpan.FromSeconds(3);
+        public int OutboxBatchSize { get; set; } = 100;
     }
 }

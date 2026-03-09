@@ -1,57 +1,65 @@
-﻿using RabbitMQ.Client;
+using RabbitMQ.Client;
 
 namespace AspNetCore.RabbitMq
 {
     public sealed class RabbitMqConnection : IRabbitMqConnection
     {
-        private readonly RabbitMqOptions _options;
+        private readonly ConnectionFactory _factory;
+        private readonly SemaphoreSlim _connectionLock = new(1, 1);
         private IConnection? _connection;
-        private readonly SemaphoreSlim _lock = new(1, 1);
 
         public RabbitMqConnection(RabbitMqOptions options)
         {
-            _options = options;
+            _factory = new ConnectionFactory
+            {
+                HostName = options.HostName,
+                Port = options.Port,
+                UserName = options.UserName,
+                Password = options.Password,
+                VirtualHost = options.VirtualHost,
+                AutomaticRecoveryEnabled = options.AutomaticRecoveryEnabled,
+                TopologyRecoveryEnabled = options.TopologyRecoveryEnabled,
+                NetworkRecoveryInterval = options.NetworkRecoveryInterval
+            };
         }
 
         public async Task<IConnection> GetConnectionAsync()
         {
-            if (_connection != null && _connection.IsOpen)
+            if (_connection is { IsOpen: true })
+            {
                 return _connection;
+            }
 
-            await _lock.WaitAsync();
+            await _connectionLock.WaitAsync();
             try
             {
-                if (_connection != null && _connection.IsOpen)
-                    return _connection;
-
-
-                var factory = new ConnectionFactory
+                if (_connection is { IsOpen: true })
                 {
-                    HostName = _options.HostName,
-                    Port = _options.Port,
-                    VirtualHost = _options.VirtualHost,
-                    UserName = _options.UserName,
-                    Password = _options.Password,
-                    ConsumerDispatchConcurrency = _options.ConsumerConcurrency
-                };
+                    return _connection;
+                }
 
+                if (_connection is not null)
+                {
+                    await _connection.DisposeAsync();
+                }
 
-                _connection = await factory.CreateConnectionAsync();
+                _connection = await _factory.CreateConnectionAsync();
                 return _connection;
             }
             finally
             {
-                _lock.Release();
+                _connectionLock.Release();
             }
         }
 
         public async ValueTask DisposeAsync()
         {
-            if (_connection != null)
+            if (_connection is not null)
             {
                 await _connection.DisposeAsync();
-                _connection = null;
             }
+
+            _connectionLock.Dispose();
         }
     }
 }
