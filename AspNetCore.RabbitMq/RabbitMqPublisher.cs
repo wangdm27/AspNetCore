@@ -23,7 +23,12 @@ namespace AspNetCore.RabbitMq
             CancellationToken cancellationToken = default)
         {
             var conn = await _connection.GetConnectionAsync();
-            await using var channel = await conn.CreateChannelAsync();
+            var channelOptions = confirm
+                ? new CreateChannelOptions(
+                    publisherConfirmationsEnabled: true,
+                    publisherConfirmationTrackingEnabled: true)
+                : null;
+            await using var channel = await conn.CreateChannelAsync(channelOptions);
 
             await channel.ExchangeDeclareAsync(exchange, ExchangeType.Direct, durable: true, autoDelete: false);
 
@@ -39,47 +44,20 @@ namespace AspNetCore.RabbitMq
 
             if (!confirm)
             {
-                await channel.BasicPublishAsync(exchange, routingKey, false, props, body);
+                await channel.BasicPublishAsync(exchange, routingKey, false, props, body, cancellationToken);
                 return;
             }
 
-
-            var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-
-            async Task AckHandler(object sender, BasicAckEventArgs ea)
-            {
-                tcs.TrySetResult(true);
-                await Task.CompletedTask;
-            }
-
-
-            async Task NackHandler(object sender, BasicNackEventArgs ea)
-            {
-                tcs.TrySetResult(false);
-                await Task.CompletedTask;
-            }
-
-
-            channel.BasicAcksAsync += AckHandler;
-            channel.BasicNacksAsync += NackHandler;
-
+            using var publishCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            publishCts.CancelAfter(TimeSpan.FromSeconds(5));
 
             try
             {
-                await channel.BasicPublishAsync(exchange, routingKey, false, props, body);
-
-
-                var confirmed = await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
-
-
-                if (!confirmed)
-                    throw new Exception("RabbitMQ publish nack received");
+                await channel.BasicPublishAsync(exchange, routingKey, false, props, body, publishCts.Token);
             }
-            finally
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
-                channel.BasicAcksAsync -= AckHandler;
-                channel.BasicNacksAsync -= NackHandler;
+                throw new TimeoutException("RabbitMQ publish confirm timed out after 5 seconds.");
             }
         }
     }
