@@ -1,5 +1,6 @@
-﻿using AspNetCore.RabbitMq;
+using AspNetCore.RabbitMq;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using static AspNetCore.Test3.DemoConsumer;
 
 namespace AspNetCore.Test3
@@ -8,93 +9,46 @@ namespace AspNetCore.Test3
     {
         static async Task Main(string[] args)
         {
-            //Console.WriteLine("Hello, World!");
+            var builder = Host.CreateApplicationBuilder(args);
 
-            //var factory = new ConnectionFactory() { HostName = "localhost" };
-            //using var connection = await factory.CreateConnectionAsync();
-            //using var channel = await connection.CreateChannelAsync();
-
-            /*
-             * Work Queue
-             * 
-            await channel.QueueDeclareAsync(queue: "task_queue", durable: true, exclusive: false, autoDelete: false, arguments: null);
-
-            await channel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false);
-
-            Console.WriteLine(" [*] Waiting for messages.");
-
-            var consumer = new AsyncEventingBasicConsumer(channel);
-            consumer.ReceivedAsync += async (model, ea) =>
-            {
-                byte[] body = ea.Body.ToArray();
-                var message = Encoding.UTF8.GetString(body);
-                Console.WriteLine($" [x] Received {message}");
-
-                int dots = message.Split('.').Length - 1;
-                await Task.Delay(dots * 1000);
-
-                Console.WriteLine(" [x] Done");
-
-                // here channel could also be accessed as ((AsyncEventingBasicConsumer)sender).Channel
-                await channel.BasicAckAsync(deliveryTag: ea.DeliveryTag, multiple: false);
-            };
-
-            await channel.BasicConsumeAsync("task_queue", autoAck: false, consumer: consumer);
-            */
-
-            /*
-             * Fanout Publish/Subscribe
-             * 
-
-            await channel.ExchangeDeclareAsync(exchange: "logs", type: ExchangeType.Fanout);
-
-            //declare a server-named queue
-            QueueDeclareOk queueDeckareResult = await channel.QueueDeclareAsync();
-            string queueName = queueDeckareResult.QueueName;
-            await channel.QueueBindAsync(queue: queueName, exchange: "logs", routingKey: string.Empty);
-
-            Console.WriteLine(" [*] Waiting for logs.");
-
-            var consumer = new AsyncEventingBasicConsumer(channel);
-            consumer.ReceivedAsync += (model, ea) =>
-            {
-                byte[] body = ea.Body.ToArray();
-                var message = Encoding.UTF8.GetString(body);
-                Console.WriteLine($" [x] {message}");
-                return Task.CompletedTask;
-            };
-
-            await channel.BasicConsumeAsync(queueName, autoAck: true, consumer: consumer);
-            */
-
-
-            var services = new ServiceCollection();
-
-            services.AddUnifiedRabbitMq(opt =>
+            builder.Services.AddUnifiedRabbitMq(opt =>
             {
                 opt.HostName = "localhost";
                 opt.UserName = "guest";
                 opt.Password = "guest";
+
+                // demo: 连接恢复、Channel 池、Outbox 批处理参数
+                opt.ChannelPoolSize = 8;
+                opt.OutboxDispatchInterval = TimeSpan.FromSeconds(2);
+                opt.OutboxBatchSize = 50;
             });
 
-            services.AddSingleton<IRabbitMqConsumer, DemoConsumer>();
+            builder.Services.AddSingleton<IRabbitMqConsumer, DemoConsumer>();
 
-            var sp = services.BuildServiceProvider();
+            await using var host = builder.Build();
+            await host.StartAsync();
 
-
-            var consumer = sp.GetRequiredService<IRabbitMqConsumer>();
+            var consumer = host.Services.GetRequiredService<IRabbitMqConsumer>();
             await consumer.StartAsync();
 
-
-            var publisher = sp.GetRequiredService<IRabbitMqPublisher>();
+            // 1) 常规实时发布
+            var publisher = host.Services.GetRequiredService<IRabbitMqPublisher>();
             await publisher.PublishAsync(
                 exchange: "demo.exchange",
                 routingKey: "demo.key",
-                new DemoMessage { Text = "Hello RabbitMQ" });
+                new DemoMessage { Text = "Hello RabbitMQ (direct publish)" });
 
+            // 2) Outbox 入箱，后台调度器会异步投递
+            var outbox = host.Services.GetRequiredService<IRabbitMqOutbox>();
+            await outbox.EnqueueAsync(
+                exchange: "demo.exchange",
+                routingKey: "demo.key",
+                new DemoMessage { Text = "Hello RabbitMQ (outbox message)" });
 
-            Console.WriteLine(" Press [enter] to exit.");
-            Console.ReadLine();
+            Console.WriteLine("已发送 1 条直发消息 + 1 条 Outbox 消息，等待后台分发...");
+            await Task.Delay(TimeSpan.FromSeconds(5));
+
+            await host.StopAsync();
         }
     }
 }
