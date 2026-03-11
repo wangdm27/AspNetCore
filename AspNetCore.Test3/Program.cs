@@ -25,7 +25,7 @@ namespace AspNetCore.Test3
 
             builder.Services.AddSingleton<IRabbitMqConsumer, DemoConsumer>();
 
-            await using var host = builder.Build();
+            using var host = builder.Build();
             await host.StartAsync();
 
             var consumer = host.Services.GetRequiredService<IRabbitMqConsumer>();
