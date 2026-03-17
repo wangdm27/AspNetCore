@@ -47,7 +47,14 @@ namespace AspNetCore.RabbitMq
                     }
                 }
 
-                await Task.Delay(_options.OutboxDispatchInterval, stoppingToken);
+                try
+                {
+                    await Task.Delay(_options.OutboxDispatchInterval, stoppingToken);
+                }
+                catch (TaskCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
             }
         }
     }
