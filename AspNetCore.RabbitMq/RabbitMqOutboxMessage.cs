@@ -1,15 +1,85 @@
 namespace AspNetCore.RabbitMq
 {
+    /// <summary>
+    /// RabbitMQ发件箱消息类
+    /// </summary>
+    /// <remarks>
+    /// 表示存储在发件箱中的待发布消息
+    /// 包含消息的基本信息和状态信息
+    /// 是发件箱模式的核心数据结构
+    /// </remarks>
     public sealed class RabbitMqOutboxMessage
     {
+        /// <summary>
+        /// 消息唯一标识
+        /// </summary>
+        /// <remarks>
+        /// 自动生成的GUID，用于唯一标识消息
+        /// </remarks>
         public Guid Id { get; init; } = Guid.NewGuid();
+        
+        /// <summary>
+        /// 交换机名称
+        /// </summary>
+        /// <remarks>
+        /// 消息要发布到的RabbitMQ交换机
+        /// </remarks>
         public required string Exchange { get; init; }
+        
+        /// <summary>
+        /// 路由键
+        /// </summary>
+        /// <remarks>
+        /// 用于消息路由的键值
+        /// </remarks>
         public required string RoutingKey { get; init; }
+        
+        /// <summary>
+        /// 消息体
+        /// </summary>
+        /// <remarks>
+        /// 消息的二进制内容，通常是序列化后的对象
+        /// </remarks>
         public required byte[] Body { get; init; }
+        
+        /// <summary>
+        /// 消息头
+        /// </summary>
+        /// <remarks>
+        /// 消息的附加属性，默认为空字典
+        /// </remarks>
         public Dictionary<string, object?> Headers { get; init; } = new();
+        
+        /// <summary>
+        /// 创建时间
+        /// </summary>
+        /// <remarks>
+        /// 消息创建的时间戳，使用UTC时间
+        /// </remarks>
         public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
+        
+        /// <summary>
+        /// 发布时间
+        /// </summary>
+        /// <remarks>
+        /// 消息成功发布到RabbitMQ的时间戳，未发布时为null
+        /// </remarks>
         public DateTimeOffset? PublishedAt { get; set; }
+        
+        /// <summary>
+        /// 重试次数
+        /// </summary>
+        /// <remarks>
+        /// 消息发布失败的重试次数
+        /// </remarks>
         public int RetryCount { get; set; }
+        
+        /// <summary>
+        /// 最后错误信息
+        /// </summary>
+        /// <remarks>
+        /// 上次发布失败的错误信息，未失败时为null
+        /// </remarks>
         public string? LastError { get; set; }
     }
 }
