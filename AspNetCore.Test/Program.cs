@@ -93,6 +93,7 @@ namespace AspNetCore.Test
 
             Console.WriteLine(" Press [enter] to exit.");
             Console.ReadLine();
+
         }
 
         static string GetMessage(int i)
