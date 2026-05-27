@@ -33,9 +33,14 @@ namespace AspNetCore.DataAccess
                 ?? new DatabaseOptions();
             var connectionString = new ConnectionStringResolver().ResolveConnectionString(databaseOptions, configuration);
 
+            services.AddDbContext<TDbContext>(options =>
+            {
+                ConfigureDbContext(options, databaseOptions, connectionString);
+            });
+
             if (databaseOptions.Orm == OrmType.EntityFrameworkCore)
             {
-                RegisterEntityFramework<TDbContext>(services, databaseOptions, connectionString);
+                RegisterEntityFramework<TDbContext>(services);
             }
             else
             {
@@ -52,17 +57,9 @@ namespace AspNetCore.DataAccess
         /// <param name="services">服务集合</param>
         /// <param name="databaseOptions">数据库配置选项</param>
         /// <param name="connectionString">数据库连接字符串</param>
-        private static void RegisterEntityFramework<TDbContext>(
-            IServiceCollection services,
-            DatabaseOptions databaseOptions,
-            string connectionString)
+        private static void RegisterEntityFramework<TDbContext>(IServiceCollection services)
             where TDbContext : DbContext
         {
-            services.AddDbContext<TDbContext>(options =>
-            {
-                ConfigureDbContext(options, databaseOptions, connectionString);
-            });
-
             services.AddScoped<IRepositoryDbContext, EfRepositoryDbContext<TDbContext>>();
             services.AddScoped(typeof(IRepository<>), typeof(EfRepository<>));
             services.AddScoped<IUnitOfWork, EfUnitOfWork>();

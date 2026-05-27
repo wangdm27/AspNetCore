@@ -1,5 +1,7 @@
 
 using AspNetCore.DataAccess;
+using AspNetCore.Api.Infrastructure.Extensions;
+using AspNetCore.Api.Infrastructure.Middleware;
 
 namespace AspNetCore.Api
 {
@@ -15,6 +17,8 @@ namespace AspNetCore.Api
             // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
             builder.Services.AddOpenApi();
             builder.Services.AddUnifiedDataAccess<ApplicationDbContext>(builder.Configuration);
+            builder.Services.AddAuthorization();
+            builder.Services.AddBusinessModules(builder.Configuration);
 
             var app = builder.Build();
 
@@ -24,8 +28,10 @@ namespace AspNetCore.Api
                 app.MapOpenApi();
             }
 
+            app.UseMiddleware<ApiExceptionMiddleware>();
             app.UseHttpsRedirection();
 
+            app.UseAuthentication();
             app.UseAuthorization();
 
 
