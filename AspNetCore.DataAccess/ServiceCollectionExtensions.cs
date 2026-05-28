@@ -94,12 +94,20 @@ namespace AspNetCore.DataAccess
                     optionsBuilder.UseSqlServer(connectionString, sqlOptions =>
                     {
                         sqlOptions.CommandTimeout(databaseOptions.CommandTimeoutSeconds);
+                        sqlOptions.EnableRetryOnFailure(
+                            maxRetryCount: 3,
+                            maxRetryDelay: TimeSpan.FromSeconds(10),
+                            errorNumbersToAdd: null);
                     });
                     break;
                 case DatabaseProvider.PostgreSql:
                     optionsBuilder.UseNpgsql(connectionString, npgsqlOptions =>
                     {
                         npgsqlOptions.CommandTimeout(databaseOptions.CommandTimeoutSeconds);
+                        npgsqlOptions.EnableRetryOnFailure(
+                            maxRetryCount: 3,
+                            maxRetryDelay: TimeSpan.FromSeconds(10),
+                            errorCodesToAdd: null);
                     });
                     break;
                 default:
