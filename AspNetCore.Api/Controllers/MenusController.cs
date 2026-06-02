@@ -30,5 +30,17 @@ namespace AspNetCore.Api.Controllers
 
             return Ok(response);
         }
+
+        [HttpGet("current/routes")]
+        [PermissionAuthorize("menu.view")]
+        public async Task<ActionResult<IReadOnlyList<MenuResponse>>> GetCurrentRoutesAsync(CancellationToken cancellationToken)
+        {
+            var response = await _permissionService.GetCurrentRoutesAsync(
+                HttpContext.GetRequiredTenantId(),
+                HttpContext.GetRequiredUserId(),
+                cancellationToken);
+
+            return Ok(response);
+        }
     }
 }

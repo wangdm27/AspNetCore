@@ -7,5 +7,7 @@ namespace AspNetCore.Api.Modules.Authorization.Services
         Task<IReadOnlyList<PermissionResponse>> GetPermissionsAsync(CancellationToken cancellationToken);
 
         Task<IReadOnlyList<MenuResponse>> GetCurrentMenusAsync(Guid tenantId, Guid userId, CancellationToken cancellationToken);
+
+        Task<IReadOnlyList<MenuResponse>> GetCurrentRoutesAsync(Guid tenantId, Guid userId, CancellationToken cancellationToken);
     }
 }

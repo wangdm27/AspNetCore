@@ -18,6 +18,8 @@ namespace AspNetCore.Api.Modules.Authorization.Contracts
 
         public string PermissionCode { get; set; } = string.Empty;
 
+        public IReadOnlyCollection<MenuButtonResponse> Buttons { get; set; } = Array.Empty<MenuButtonResponse>();
+
         public IReadOnlyCollection<MenuResponse> Children { get; set; } = Array.Empty<MenuResponse>();
     }
 }
