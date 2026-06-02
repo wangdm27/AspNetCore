@@ -37,7 +37,7 @@ create table permissions (
     id uniqueidentifier primary key,
     code nvarchar(100) not null unique,
     name nvarchar(100) not null,
-    type int not null,
+    type int not null, -- 1=Api, 2=Menu, 3=Button
     description nvarchar(500) not null,
     http_method nvarchar(20) not null,
     route nvarchar(200) not null,

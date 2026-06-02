@@ -37,6 +37,17 @@ namespace AspNetCore.Api.Controllers
             return Ok(response);
         }
 
+
+        [HttpGet("{roleId:guid}/permissions")]
+        [PermissionAuthorize("role.view")]
+        public async Task<ActionResult<RolePermissionSummaryResponse>> GetPermissionsAsync(
+            Guid roleId,
+            CancellationToken cancellationToken)
+        {
+            var response = await _roleService.GetRolePermissionsAsync(HttpContext.GetRequiredTenantId(), roleId, cancellationToken);
+            return Ok(response);
+        }
+
         [HttpPut("{roleId:guid}/permissions")]
         [PermissionAuthorize("role.assign_permissions")]
         public async Task<ActionResult> AssignPermissionsAsync(
@@ -45,6 +56,17 @@ namespace AspNetCore.Api.Controllers
             CancellationToken cancellationToken)
         {
             await _roleService.AssignPermissionsAsync(HttpContext.GetRequiredTenantId(), roleId, request.PermissionIds, cancellationToken);
+            return NoContent();
+        }
+
+        [HttpPut("{roleId:guid}/menus")]
+        [PermissionAuthorize("role.assign_menus")]
+        public async Task<ActionResult> AssignMenusAsync(
+            Guid roleId,
+            [FromBody] AssignRoleMenusRequest request,
+            CancellationToken cancellationToken)
+        {
+            await _roleService.AssignMenusAsync(HttpContext.GetRequiredTenantId(), roleId, request, cancellationToken);
             return NoContent();
         }
     }

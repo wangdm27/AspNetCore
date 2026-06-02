@@ -21,10 +21,30 @@ namespace AspNetCore.Api.Controllers
 
         [HttpGet]
         [PermissionAuthorize("user.view")]
-        public async Task<ActionResult<IReadOnlyList<UserListItemResponse>>> GetAsync(CancellationToken cancellationToken)
+        public async Task<ActionResult<PagedResponse<UserListItemResponse>>> GetAsync(
+            [FromQuery] UserQueryRequest request,
+            CancellationToken cancellationToken)
         {
-            var response = await _userService.GetTenantUsersAsync(HttpContext.GetRequiredTenantId(), cancellationToken);
+            var response = await _userService.GetTenantUsersAsync(HttpContext.GetRequiredTenantId(), request, cancellationToken);
             return Ok(response);
+        }
+
+        [HttpGet("{userId:guid}")]
+        [PermissionAuthorize("user.view")]
+        public async Task<ActionResult<UserProfileResponse>> GetAsync(Guid userId, CancellationToken cancellationToken)
+        {
+            var response = await _userService.GetAsync(HttpContext.GetRequiredTenantId(), userId, cancellationToken);
+            return Ok(response);
+        }
+
+        [HttpPost]
+        [PermissionAuthorize("user.create")]
+        public async Task<ActionResult<UserProfileResponse>> CreateAsync(
+            [FromBody] CreateUserRequest request,
+            CancellationToken cancellationToken)
+        {
+            var response = await _userService.CreateAsync(HttpContext.GetRequiredTenantId(), request, cancellationToken);
+            return CreatedAtAction(nameof(GetAsync), new { userId = response.UserId }, response);
         }
 
         [HttpPut("{userId:guid}")]
@@ -36,6 +56,19 @@ namespace AspNetCore.Api.Controllers
         {
             var response = await _userService.UpdateAsync(HttpContext.GetRequiredTenantId(), userId, request, cancellationToken);
             return Ok(response);
+        }
+
+        [HttpDelete("{userId:guid}")]
+        [PermissionAuthorize("user.delete")]
+        public async Task<ActionResult> DeleteAsync(Guid userId, CancellationToken cancellationToken)
+        {
+            await _userService.DeleteAsync(
+                HttpContext.GetRequiredTenantId(),
+                userId,
+                HttpContext.GetRequiredUserId(),
+                cancellationToken);
+
+            return NoContent();
         }
 
         [HttpPut("{userId:guid}/roles")]
