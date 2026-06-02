@@ -2,7 +2,7 @@ using RabbitMQ.Client;
 
 namespace AspNetCore.RabbitMq
 {
-    internal sealed class RabbitMqConnection : IRabbitMqConnection
+    public sealed class RabbitMqConnection : IRabbitMqConnection
     {
         private readonly ConnectionFactory _factory;
         private readonly SemaphoreSlim _connectionLock = new(1, 1);

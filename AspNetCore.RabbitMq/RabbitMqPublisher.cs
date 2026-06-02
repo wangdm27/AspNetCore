@@ -1,3 +1,6 @@
+using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
+using System.Text;
 using System.Text.Json;
 using RabbitMQ.Client;
 
@@ -42,7 +45,8 @@ namespace AspNetCore.RabbitMq
             string exchange,
             string routingKey,
             T message,
-            Action<IBasicProperties>? props = null,
+            bool confirm = true,
+            int? delayMs = null,
             CancellationToken cancellationToken = default)
         {
             var body = JsonSerializer.SerializeToUtf8Bytes(message);

@@ -54,5 +54,8 @@ namespace AspNetCore.RabbitMq
             IDictionary<string, object?>? headers = null,
             Action<IBasicProperties>? props = null,
             CancellationToken cancellationToken = default);
+            bool confirm = true,
+            int? delayMs = null,
+            CancellationToken cancellationToken = default);
     }
 }

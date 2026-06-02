@@ -85,21 +85,20 @@ namespace AspNetCore.RabbitMq
             var conn = await _connection.GetConnectionAsync();
             var channel = await conn.CreateChannelAsync();
 
-            // 1️ 自动声明 Exchange
-            await channel.ExchangeDeclareAsync(
-                exchange: Exchange,
-                type: ExchangeType.Direct,
-                durable: true,
-                autoDelete: false,
-                arguments: null);
+            // 死信队列参数
+            var args = new Dictionary<string, object?>();
+            if (_options.EnableDeadLetter)
+            {
+                args["x-dead-letter-exchange"] = _options.DeadLetterExchange;
+                args["x-dead-letter-routing-key"] = _options.DeadLetterQueue;
+                args["x-message-ttl"] = _options.DefaultMessageTTL;
 
-            // 2️ 自动声明 Queue
-            await channel.QueueDeclareAsync(
-                queue: Queue,
-                durable: true,
-                exclusive: false,
-                autoDelete: false,
-                arguments: null);
+
+                await channel.ExchangeDeclareAsync(_options.DeadLetterExchange, ExchangeType.Direct, true, false);
+                await channel.QueueDeclareAsync(_options.DeadLetterQueue, true, false, false);
+                await channel.QueueBindAsync(_options.DeadLetterQueue, _options.DeadLetterExchange, _options.DeadLetterQueue);
+            }
+
 
             // 3️ 绑定 Queue 到 Exchange
             await channel.QueueBindAsync(
