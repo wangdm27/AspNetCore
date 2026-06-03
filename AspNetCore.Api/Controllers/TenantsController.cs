@@ -18,6 +18,15 @@ namespace AspNetCore.Api.Controllers
             _tenantService = tenantService;
         }
 
+        [HttpGet]
+        [Authorize]
+        [PermissionAuthorize("tenant.view")]
+        public async Task<ActionResult<IReadOnlyList<TenantResponse>>> GetAllAsync(CancellationToken cancellationToken)
+        {
+            var response = await _tenantService.GetAllAsync(cancellationToken);
+            return Ok(response);
+        }
+
         [HttpPost]
         [AllowAnonymous]
         public async Task<ActionResult<TenantResponse>> CreateAsync(
@@ -25,7 +34,7 @@ namespace AspNetCore.Api.Controllers
             CancellationToken cancellationToken)
         {
             var response = await _tenantService.CreateAsync(request, cancellationToken);
-            return CreatedAtAction(nameof(GetCurrentAsync), new { }, response);
+            return CreatedAtAction(nameof(GetCurrentAsync), response);
         }
 
         [HttpGet("current")]

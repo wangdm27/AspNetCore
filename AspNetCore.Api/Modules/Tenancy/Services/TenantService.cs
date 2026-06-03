@@ -17,6 +17,24 @@ namespace AspNetCore.Api.Modules.Tenancy.Services
             _passwordHasher = passwordHasher;
         }
 
+        public async Task<IReadOnlyList<TenantResponse>> GetAllAsync(CancellationToken cancellationToken)
+        {
+            var tenants = await _dbContext.Tenants
+                .AsNoTracking()
+                .OrderBy(x => x.CreatedAt)
+                .Select(x => new TenantResponse
+                {
+                    TenantId = x.Id,
+                    Code = x.Code,
+                    Name = x.Name,
+                    IsActive = x.IsActive,
+                    CreatedAt = x.CreatedAt
+                })
+                .ToListAsync(cancellationToken);
+
+            return tenants;
+        }
+
         public async Task<TenantResponse> CreateAsync(CreateTenantRequest request, CancellationToken cancellationToken)
         {
             var normalizedCode = request.Code.Trim();

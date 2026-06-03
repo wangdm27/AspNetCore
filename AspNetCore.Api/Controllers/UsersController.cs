@@ -22,16 +22,27 @@ namespace AspNetCore.Api.Controllers
         [HttpGet]
         [PermissionAuthorize("user.view")]
         public async Task<ActionResult<PagedResponse<UserListItemResponse>>> GetAsync(
-            [FromQuery] UserQueryRequest request,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            string? keyword = null,
+            bool? isActive = null,
+            int pageIndex = 1,
+            int pageSize = 20)
         {
+            var request = new UserQueryRequest
+            {
+                Keyword = keyword,
+                IsActive = isActive,
+                PageIndex = pageIndex,
+                PageSize = pageSize
+            };
+
             var response = await _userService.GetTenantUsersAsync(HttpContext.GetRequiredTenantId(), request, cancellationToken);
             return Ok(response);
         }
 
         [HttpGet("{userId:guid}")]
         [PermissionAuthorize("user.view")]
-        public async Task<ActionResult<UserProfileResponse>> GetAsync(Guid userId, CancellationToken cancellationToken)
+        public async Task<ActionResult<UserProfileResponse>> GetByIdAsync(Guid userId, CancellationToken cancellationToken)
         {
             var response = await _userService.GetAsync(HttpContext.GetRequiredTenantId(), userId, cancellationToken);
             return Ok(response);
@@ -44,7 +55,7 @@ namespace AspNetCore.Api.Controllers
             CancellationToken cancellationToken)
         {
             var response = await _userService.CreateAsync(HttpContext.GetRequiredTenantId(), request, cancellationToken);
-            return CreatedAtAction(nameof(GetAsync), new { userId = response.UserId }, response);
+            return Created($"/api/identity/users/{response.UserId}", response);
         }
 
         [HttpPut("{userId:guid}")]
