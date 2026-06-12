@@ -1,12 +1,8 @@
 using AspNetCore.Api.Infrastructure.Auth;
 using AspNetCore.Api.Infrastructure.Context;
-using AspNetCore.Api.Modules.Authorization;
 using AspNetCore.Api.Modules.Authorization.Services;
-using AspNetCore.Api.Modules.Identity;
 using AspNetCore.Api.Modules.Identity.Services;
-using AspNetCore.Api.Modules.Tenancy;
 using AspNetCore.Api.Modules.Tenancy.Services;
-using AspNetCore.DataAccess;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
