@@ -1,5 +1,6 @@
 using AspNetCore.Api.Infrastructure.Auth;
 using AspNetCore.Api.Infrastructure.Context;
+using AspNetCore.Api.Infrastructure.Services;
 using AspNetCore.Api.Modules.Authorization.Services;
 using AspNetCore.Api.Modules.Identity.Services;
 using AspNetCore.Api.Modules.Tenancy.Services;
@@ -24,10 +25,26 @@ namespace AspNetCore.Api.Infrastructure.Extensions
             services.AddScoped<IPermissionService, PermissionService>();
             services.AddScoped<IPermissionChecker, PermissionChecker>();
             services.AddScoped<IAuthorizationSeedService, AuthorizationSeedService>();
+            services.AddScoped<IAuditLogService, AuditLogService>();
+            services.AddScoped<IEmailService, SmtpEmailService>();
+            services.Configure<EmailOptions>(configuration.GetSection(EmailOptions.SectionName));
 
             services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
             var jwtOptions = configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>() ?? new JwtOptions();
-            var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.SigningKey));
+
+            // SigningKey：优先从环境变量 JWT_SIGNING_KEY 读取，其次从配置读取
+            // 生产环境必须设置环境变量，否则启动时抛异常
+            var signingKey = Environment.GetEnvironmentVariable("JWT_SIGNING_KEY") ?? jwtOptions.SigningKey;
+
+            if (signingKey == "AspNetCore-Replace-This-With-A-Strong-Key-1234567890")
+            {
+                throw new InvalidOperationException(
+                    "JWT SigningKey is using the default value. " +
+                    "Set the 'Jwt:SigningKey' configuration or the 'JWT_SIGNING_KEY' environment variable with a strong key (at least 32 characters).");
+            }
+
+            jwtOptions.SigningKey = signingKey;
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey));
 
             services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 .AddJwtBearer(options =>
@@ -40,7 +57,7 @@ namespace AspNetCore.Api.Infrastructure.Extensions
                         ValidateLifetime = true,
                         ValidIssuer = jwtOptions.Issuer,
                         ValidAudience = jwtOptions.Audience,
-                        IssuerSigningKey = signingKey,
+                        IssuerSigningKey = key,
                         ClockSkew = TimeSpan.FromMinutes(1)
                     };
                 });

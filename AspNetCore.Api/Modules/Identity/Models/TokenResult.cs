@@ -5,5 +5,7 @@ namespace AspNetCore.Api.Modules.Identity.Models
         public string AccessToken { get; set; } = string.Empty;
 
         public DateTime ExpiresAt { get; set; }
+
+        public string RefreshToken { get; set; } = string.Empty;
     }
 }

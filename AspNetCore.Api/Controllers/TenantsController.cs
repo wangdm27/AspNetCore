@@ -46,6 +46,18 @@ namespace AspNetCore.Api.Controllers
             return Ok(response);
         }
 
+        [HttpPut("{tenantId:guid}")]
+        [Authorize]
+        [PermissionAuthorize("tenant.update")]
+        public async Task<ActionResult<TenantResponse>> UpdateAsync(
+            Guid tenantId,
+            [FromBody] UpdateTenantRequest request,
+            CancellationToken cancellationToken)
+        {
+            var response = await _tenantService.UpdateAsync(tenantId, request, cancellationToken);
+            return Ok(response);
+        }
+
         [HttpPost("current/users")]
         [Authorize]
         [PermissionAuthorize("tenant.user.add")]

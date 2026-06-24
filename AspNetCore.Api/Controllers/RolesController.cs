@@ -27,6 +27,17 @@ namespace AspNetCore.Api.Controllers
             return Ok(response);
         }
 
+        [HttpGet("{roleId:guid}")]
+        [PermissionAuthorize("role.view")]
+        public async Task<ActionResult<RoleResponse>> GetByIdAsync(Guid roleId, CancellationToken cancellationToken)
+        {
+            // 复用 GetRolesAsync 然后筛选，或直接获取——当前用列表接口满足
+            var roles = await _roleService.GetRolesAsync(HttpContext.GetRequiredTenantId(), cancellationToken);
+            var role = roles.FirstOrDefault(x => x.RoleId == roleId)
+                ?? throw new InvalidOperationException("Role does not exist.");
+            return Ok(role);
+        }
+
         [HttpPost]
         [PermissionAuthorize("role.create")]
         public async Task<ActionResult<RoleResponse>> CreateAsync(
@@ -37,6 +48,24 @@ namespace AspNetCore.Api.Controllers
             return Ok(response);
         }
 
+        [HttpPut("{roleId:guid}")]
+        [PermissionAuthorize("role.update")]
+        public async Task<ActionResult<RoleResponse>> UpdateAsync(
+            Guid roleId,
+            [FromBody] UpdateRoleRequest request,
+            CancellationToken cancellationToken)
+        {
+            var response = await _roleService.UpdateAsync(HttpContext.GetRequiredTenantId(), roleId, request, cancellationToken);
+            return Ok(response);
+        }
+
+        [HttpDelete("{roleId:guid}")]
+        [PermissionAuthorize("role.delete")]
+        public async Task<ActionResult> DeleteAsync(Guid roleId, CancellationToken cancellationToken)
+        {
+            await _roleService.DeleteAsync(HttpContext.GetRequiredTenantId(), roleId, cancellationToken);
+            return NoContent();
+        }
 
         [HttpGet("{roleId:guid}/permissions")]
         [PermissionAuthorize("role.view")]

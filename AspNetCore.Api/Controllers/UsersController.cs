@@ -92,5 +92,16 @@ namespace AspNetCore.Api.Controllers
             await _userService.AssignRolesAsync(HttpContext.GetRequiredTenantId(), userId, request.RoleIds, cancellationToken);
             return NoContent();
         }
+
+        [HttpPut("{userId:guid}/password")]
+        [PermissionAuthorize("user.update")]
+        public async Task<ActionResult> ResetPasswordAsync(
+            Guid userId,
+            [FromBody] ResetPasswordRequest request,
+            CancellationToken cancellationToken)
+        {
+            await _userService.ResetPasswordAsync(HttpContext.GetRequiredTenantId(), userId, request, cancellationToken);
+            return NoContent();
+        }
     }
 }

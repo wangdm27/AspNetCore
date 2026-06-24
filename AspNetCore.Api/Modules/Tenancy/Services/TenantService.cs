@@ -288,5 +288,30 @@ namespace AspNetCore.Api.Modules.Tenancy.Services
             await _dbContext.UserRoles.AddRangeAsync(roleAssignments, cancellationToken);
             await _dbContext.SaveChangesAsync(cancellationToken);
         }
+
+        /// <summary>
+        /// 更新租户信息
+        /// </summary>
+        public async Task<TenantResponse> UpdateAsync(Guid tenantId, UpdateTenantRequest request, CancellationToken cancellationToken)
+        {
+            var tenant = await _dbContext.Tenants
+                .SingleOrDefaultAsync(x => x.Id == tenantId, cancellationToken)
+                ?? throw new InvalidOperationException("Tenant does not exist.");
+
+            tenant.Name = request.Name.Trim();
+            tenant.IsActive = request.IsActive;
+            tenant.UpdatedAt = DateTime.UtcNow;
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            return new TenantResponse
+            {
+                TenantId = tenant.Id,
+                Code = tenant.Code,
+                Name = tenant.Name,
+                IsActive = tenant.IsActive,
+                CreatedAt = tenant.CreatedAt
+            };
+        }
     }
 }

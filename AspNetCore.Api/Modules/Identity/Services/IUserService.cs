@@ -64,5 +64,10 @@ namespace AspNetCore.Api.Modules.Identity.Services
         /// <param name="cancellationToken">取消令牌</param>
         /// <returns>任务</returns>
         Task AssignRolesAsync(Guid tenantId, Guid userId, IReadOnlyCollection<Guid> roleIds, CancellationToken cancellationToken);
+
+        /// <summary>
+        /// 重置用户密码（管理员操作）
+        /// </summary>
+        Task ResetPasswordAsync(Guid tenantId, Guid userId, ResetPasswordRequest request, CancellationToken cancellationToken);
     }
 }

@@ -20,6 +20,16 @@ namespace AspNetCore.Api
             builder.Services.AddAuthorization();
             builder.Services.AddBusinessModules(builder.Configuration);
 
+            builder.Services.AddCors(options =>
+            {
+                options.AddPolicy("AllowAll", policy =>
+                {
+                    policy.AllowAnyOrigin()
+                          .AllowAnyMethod()
+                          .AllowAnyHeader();
+                });
+            });
+
             var app = builder.Build();
 
             // Configure the HTTP request pipeline.
@@ -31,6 +41,7 @@ namespace AspNetCore.Api
             app.UseMiddleware<ApiExceptionMiddleware>();
             app.UseHttpsRedirection();
 
+            app.UseCors("AllowAll");
             app.UseAuthentication();
             app.UseAuthorization();
 

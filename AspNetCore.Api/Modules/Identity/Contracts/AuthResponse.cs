@@ -16,6 +16,8 @@ namespace AspNetCore.Api.Modules.Identity.Contracts
 
         public string AccessToken { get; set; } = string.Empty;
 
+        public string RefreshToken { get; set; } = string.Empty;
+
         public DateTime ExpiresAt { get; set; }
 
         public IReadOnlyCollection<string> Roles { get; set; } = Array.Empty<string>();

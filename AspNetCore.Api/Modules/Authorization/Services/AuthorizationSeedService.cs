@@ -21,11 +21,16 @@ namespace AspNetCore.Api.Modules.Authorization.Services
         private static readonly Guid RoleAssignMenusPermissionId = Guid.Parse("04d68c7e-37de-4747-b408-01e2a7da9c92");
         private static readonly Guid PermissionViewPermissionId = Guid.Parse("576304a1-053f-439a-b89c-bf8499f64b8a");
         private static readonly Guid MenuViewPermissionId = Guid.Parse("e1e931ff-a11b-440a-a6b6-f6a8a1eb230f");
+        private static readonly Guid TenantUpdatePermissionId = Guid.Parse("a2b3c4d5-e6f7-4a8b-9c0d-1e2f3a4b5c6d");
+        private static readonly Guid RoleUpdatePermissionId = Guid.Parse("b3c4d5e6-f7a8-4b9c-0d1e-2f3a4b5c6d7e");
+        private static readonly Guid RoleDeletePermissionId = Guid.Parse("c4d5e6f7-a8b9-4c0d-1e2f-3a4b5c6d7e8f");
+        private static readonly Guid AuditViewPermissionId = Guid.Parse("d5e6f7a8-b9c0-4d1e-2f3a-4b5c6d7e8f9a");
 
         private static readonly Guid TenantRootMenuId = Guid.Parse("0d21e602-86fc-4247-bf98-98eec40d1dac");
         private static readonly Guid UserRootMenuId = Guid.Parse("69c31d4a-e6ec-4776-9314-e1ccaa62e01d");
         private static readonly Guid RoleRootMenuId = Guid.Parse("15790478-9e85-4809-b1f0-5ff62636ed84");
         private static readonly Guid PermissionRootMenuId = Guid.Parse("390a53c9-eb62-4a8d-b14b-c52a66c38a53");
+        private static readonly Guid AuditRootMenuId = Guid.Parse("4a1b2c3d-4e5f-4a6b-7c8d-9e0f1a2b3c4d");
 
         private readonly ApplicationDbContext _dbContext;
 
@@ -52,7 +57,11 @@ namespace AspNetCore.Api.Modules.Authorization.Services
                 new Permission { Id = RoleAssignPermissionId, Code = "role.assign_permissions", Name = "Assign Role Permissions", Type = PermissionType.Button, Description = "Grant permissions to a role.", HttpMethod = "PUT", Route = "/api/authorization/roles/{roleId}/permissions", CreatedAt = utcNow },
                 new Permission { Id = RoleAssignMenusPermissionId, Code = "role.assign_menus", Name = "Assign Role Menus", Type = PermissionType.Button, Description = "Grant menu and button permissions to a role.", HttpMethod = "PUT", Route = "/api/authorization/roles/{roleId}/menus", CreatedAt = utcNow },
                 new Permission { Id = PermissionViewPermissionId, Code = "permission.view", Name = "View Permissions", Type = PermissionType.Api, Description = "View system permissions.", HttpMethod = "GET", Route = "/api/authorization/permissions", CreatedAt = utcNow },
-                new Permission { Id = MenuViewPermissionId, Code = "menu.view", Name = "View Menus", Type = PermissionType.Api, Description = "View current user menus and dynamic routes.", HttpMethod = "GET", Route = "/api/authorization/menus/current", CreatedAt = utcNow }
+                new Permission { Id = MenuViewPermissionId, Code = "menu.view", Name = "View Menus", Type = PermissionType.Api, Description = "View current user menus and dynamic routes.", HttpMethod = "GET", Route = "/api/authorization/menus/current", CreatedAt = utcNow },
+                new Permission { Id = TenantUpdatePermissionId, Code = "tenant.update", Name = "Update Tenant", Type = PermissionType.Api, Description = "Update tenant information.", HttpMethod = "PUT", Route = "/api/tenancy/tenants/{tenantId}", CreatedAt = utcNow },
+                new Permission { Id = RoleUpdatePermissionId, Code = "role.update", Name = "Update Role", Type = PermissionType.Button, Description = "Update tenant role.", HttpMethod = "PUT", Route = "/api/authorization/roles/{roleId}", CreatedAt = utcNow },
+                new Permission { Id = RoleDeletePermissionId, Code = "role.delete", Name = "Delete Role", Type = PermissionType.Button, Description = "Delete tenant role.", HttpMethod = "DELETE", Route = "/api/authorization/roles/{roleId}", CreatedAt = utcNow },
+                new Permission { Id = AuditViewPermissionId, Code = "audit.view", Name = "View Audit Logs", Type = PermissionType.Menu, Description = "View system audit logs.", HttpMethod = "GET", Route = "/api/audit-logs", CreatedAt = utcNow }
             };
 
             var existingPermissionCodes = await _dbContext.Permissions
@@ -93,7 +102,8 @@ namespace AspNetCore.Api.Modules.Authorization.Services
                 new Menu { Id = TenantRootMenuId, ParentId = null, Code = "tenant-center", Name = "Tenant Center", Path = "/tenants/current", Component = "tenancy/current", Icon = "building", Sort = 10, PermissionCode = "tenant.view", CreatedAt = utcNow },
                 new Menu { Id = UserRootMenuId, ParentId = null, Code = "user-center", Name = "User Center", Path = "/users", Component = "identity/users", Icon = "users", Sort = 20, PermissionCode = "user.view", CreatedAt = utcNow },
                 new Menu { Id = RoleRootMenuId, ParentId = null, Code = "role-center", Name = "Role Center", Path = "/roles", Component = "authorization/roles", Icon = "shield", Sort = 30, PermissionCode = "role.view", CreatedAt = utcNow },
-                new Menu { Id = PermissionRootMenuId, ParentId = null, Code = "permission-center", Name = "Permission Center", Path = "/permissions", Component = "authorization/permissions", Icon = "key", Sort = 40, PermissionCode = "permission.view", CreatedAt = utcNow }
+                new Menu { Id = PermissionRootMenuId, ParentId = null, Code = "permission-center", Name = "Permission Center", Path = "/permissions", Component = "authorization/permissions", Icon = "key", Sort = 40, PermissionCode = "permission.view", CreatedAt = utcNow },
+                new Menu { Id = AuditRootMenuId, ParentId = null, Code = "audit-center", Name = "Audit Center", Path = "/audit-logs", Component = "audit/logs", Icon = "scroll-text", Sort = 50, PermissionCode = "audit.view", CreatedAt = utcNow }
             };
 
             var existingMenuCodes = await _dbContext.Menus

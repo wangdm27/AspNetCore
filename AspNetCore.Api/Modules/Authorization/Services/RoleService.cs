@@ -78,6 +78,72 @@ namespace AspNetCore.Api.Modules.Authorization.Services
         }
 
         /// <summary>
+        /// 更新角色
+        /// </summary>
+        public async Task<RoleResponse> UpdateAsync(Guid tenantId, Guid roleId, UpdateRoleRequest request, CancellationToken cancellationToken)
+        {
+            var role = await EnsureRoleAsync(tenantId, roleId, cancellationToken);
+
+            var normalizedCode = request.Code.Trim();
+            var normalizedName = request.Name.Trim();
+
+            var duplicatedRole = await _dbContext.Roles.AnyAsync(
+                x => x.TenantId == tenantId && x.Id != roleId && (x.Code == normalizedCode || x.Name == normalizedName),
+                cancellationToken);
+
+            if (duplicatedRole)
+            {
+                throw new InvalidOperationException("Role code or name already exists in the tenant.");
+            }
+
+            role.Code = normalizedCode;
+            role.Name = normalizedName;
+            role.Description = request.Description.Trim();
+            role.IsDefault = request.IsDefault;
+            role.UpdatedAt = DateTime.UtcNow;
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            return new RoleResponse
+            {
+                RoleId = role.Id,
+                TenantId = role.TenantId,
+                Code = role.Code,
+                Name = role.Name,
+                Description = role.Description,
+                IsDefault = role.IsDefault,
+                Permissions = await GetRolePermissionCodesAsync(roleId, cancellationToken)
+            };
+        }
+
+        /// <summary>
+        /// 删除角色（禁止删除默认角色）
+        /// </summary>
+        public async Task DeleteAsync(Guid tenantId, Guid roleId, CancellationToken cancellationToken)
+        {
+            var role = await EnsureRoleAsync(tenantId, roleId, cancellationToken);
+
+            if (role.IsDefault)
+            {
+                throw new InvalidOperationException("Default role cannot be deleted.");
+            }
+
+            var rolePermissions = await _dbContext.RolePermissions
+                .Where(x => x.RoleId == roleId)
+                .ToListAsync(cancellationToken);
+            _dbContext.RolePermissions.RemoveRange(rolePermissions);
+
+            var userRoles = await _dbContext.UserRoles
+                .Where(x => x.RoleId == roleId)
+                .ToListAsync(cancellationToken);
+            _dbContext.UserRoles.RemoveRange(userRoles);
+
+            _dbContext.Roles.Remove(role);
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        /// <summary>
         /// 获取租户下的所有角色列表
         /// </summary>
         /// <param name="tenantId">租户ID</param>
@@ -251,6 +317,21 @@ namespace AspNetCore.Api.Modules.Authorization.Services
             await _dbContext.RolePermissions.AddRangeAsync(newPermissions, cancellationToken);
             role.UpdatedAt = utcNow;
             await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        /// <summary>
+        /// 获取角色的权限代码列表
+        /// </summary>
+        private async Task<IReadOnlyCollection<string>> GetRolePermissionCodesAsync(Guid roleId, CancellationToken cancellationToken)
+        {
+            return await (from rolePermission in _dbContext.RolePermissions.AsNoTracking()
+                          join permission in _dbContext.Permissions.AsNoTracking()
+                              on rolePermission.PermissionId equals permission.Id
+                          where rolePermission.RoleId == roleId
+                          select permission.Code)
+                .Distinct()
+                .OrderBy(x => x)
+                .ToListAsync(cancellationToken);
         }
 
         /// <summary>

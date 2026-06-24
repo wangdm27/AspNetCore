@@ -1,54 +1,46 @@
 using AspNetCore.Api.Infrastructure.Auth;
+using AspNetCore.Api.Infrastructure.Services;
 using AspNetCore.Api.Modules.Identity.Contracts;
 using AspNetCore.DataAccess;
 using AspNetCore.DataAccess.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace AspNetCore.Api.Modules.Identity.Services
 {
     /// <summary>
-/// 身份认证服务实现类
-/// </summary>
-public sealed class AuthService : IAuthService
-{
-    /// <summary>
-    /// 应用程序数据库上下文
+    /// 身份认证服务实现类
     /// </summary>
-    private readonly ApplicationDbContext _dbContext;
-
-    /// <summary>
-    /// 密码哈希器
-    /// </summary>
-    private readonly IPasswordHasher _passwordHasher;
-
-    /// <summary>
-    /// Token 服务
-    /// </summary>
-    private readonly ITokenService _tokenService;
-
-    /// <summary>
-    /// 构造函数
-    /// </summary>
-    /// <param name="dbContext">应用程序数据库上下文</param>
-    /// <param name="passwordHasher">密码哈希器</param>
-    /// <param name="tokenService">Token 服务</param>
-    public AuthService(
-        ApplicationDbContext dbContext,
-        IPasswordHasher passwordHasher,
-        ITokenService tokenService)
+    public sealed class AuthService : IAuthService
     {
-        _dbContext = dbContext;
-        _passwordHasher = passwordHasher;
-        _tokenService = tokenService;
-    }
+        private readonly ApplicationDbContext _dbContext;
+        private readonly IPasswordHasher _passwordHasher;
+        private readonly ITokenService _tokenService;
+        private readonly IEmailService _emailService;
+        private readonly JwtOptions _jwtOptions;
+
+        public AuthService(
+            ApplicationDbContext dbContext,
+            IPasswordHasher passwordHasher,
+            ITokenService tokenService,
+            IEmailService emailService,
+            IOptions<JwtOptions> jwtOptions)
+        {
+            _dbContext = dbContext;
+            _passwordHasher = passwordHasher;
+            _tokenService = tokenService;
+            _emailService = emailService;
+            _jwtOptions = jwtOptions.Value;
+        }
 
         /// <summary>
         /// 用户注册
         /// </summary>
-        /// <param name="request">注册请求信息</param>
-        /// <param name="cancellationToken">取消令牌</param>
-        /// <returns>认证响应，包含访问令牌等信息</returns>
-        /// <exception cref="InvalidOperationException">当租户不存在、租户被禁用或用户名/邮箱已存在时抛出</exception>
         public async Task<AuthResponse> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken)
         {
             var tenant = await _dbContext.Tenants
@@ -110,10 +102,6 @@ public sealed class AuthService : IAuthService
         /// <summary>
         /// 用户登录
         /// </summary>
-        /// <param name="request">登录请求信息</param>
-        /// <param name="cancellationToken">取消令牌</param>
-        /// <returns>认证响应，包含访问令牌等信息</returns>
-        /// <exception cref="InvalidOperationException">当租户不存在、用户名或密码无效、用户在租户中不可用时抛出</exception>
         public async Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken cancellationToken)
         {
             var tenant = await _dbContext.Tenants
@@ -146,11 +134,6 @@ public sealed class AuthService : IAuthService
         /// <summary>
         /// 获取当前用户资料
         /// </summary>
-        /// <param name="userId">用户ID</param>
-        /// <param name="tenantId">租户ID</param>
-        /// <param name="cancellationToken">取消令牌</param>
-        /// <returns>用户资料响应，包含用户基本信息、角色和权限</returns>
-        /// <exception cref="InvalidOperationException">当用户或租户不存在时抛出</exception>
         public async Task<UserProfileResponse> GetCurrentUserProfileAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken)
         {
             var user = await _dbContext.Users
@@ -180,17 +163,67 @@ public sealed class AuthService : IAuthService
         }
 
         /// <summary>
-        /// 构建认证响应
+        /// 刷新令牌
         /// </summary>
-        /// <param name="user">用户实体</param>
-        /// <param name="tenant">租户实体</param>
-        /// <param name="cancellationToken">取消令牌</param>
-        /// <returns>认证响应对象</returns>
-        private async Task<AuthResponse> BuildAuthResponseAsync(User user, Tenant tenant, CancellationToken cancellationToken)
+        public async Task<AuthResponse> RefreshTokenAsync(string refreshTokenValue, CancellationToken cancellationToken)
         {
+            var tokenHash = ComputeSha256Hash(refreshTokenValue);
+
+            var refreshToken = await _dbContext.RefreshTokens
+                .SingleOrDefaultAsync(x => x.TokenHash == tokenHash, cancellationToken)
+                ?? throw new InvalidOperationException("Invalid refresh token.");
+
+            if (refreshToken.IsUsed)
+            {
+                throw new InvalidOperationException("Refresh token has already been used.");
+            }
+
+            if (refreshToken.ExpiresAt < DateTime.UtcNow)
+            {
+                throw new InvalidOperationException("Refresh token has expired.");
+            }
+
+            refreshToken.IsUsed = true;
+
+            var user = await _dbContext.Users
+                .SingleOrDefaultAsync(x => x.Id == refreshToken.UserId, cancellationToken)
+                ?? throw new InvalidOperationException("User does not exist.");
+
+            if (!user.IsActive)
+            {
+                throw new InvalidOperationException("User is disabled.");
+            }
+
+            var tenantUser = await _dbContext.TenantUsers
+                .AsNoTracking()
+                .Where(x => x.UserId == user.Id)
+                .Join(_dbContext.Tenants.AsNoTracking(), tu => tu.TenantId, t => t.Id, (tu, t) => new { tu, t })
+                .Where(x => x.t.IsActive)
+                .OrderByDescending(x => x.tu.JoinedAt)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (tenantUser is null)
+            {
+                throw new InvalidOperationException("User has no active tenant.");
+            }
+
+            var tenant = tenantUser.t;
             var roleCodes = await GetRoleCodesAsync(tenant.Id, user.Id, cancellationToken);
             var permissionCodes = await GetPermissionCodesAsync(tenant.Id, user.Id, cancellationToken);
             var tokenResult = _tokenService.CreateToken(user, tenant, roleCodes, permissionCodes);
+
+            var newTokenHash = ComputeSha256Hash(tokenResult.RefreshToken);
+            await _dbContext.RefreshTokens.AddAsync(new RefreshToken
+            {
+                Id = Guid.NewGuid(),
+                UserId = user.Id,
+                TokenHash = newTokenHash,
+                ExpiresAt = DateTime.UtcNow.AddDays(_jwtOptions.RefreshTokenExpiresDays),
+                IsUsed = false,
+                CreatedAt = DateTime.UtcNow
+            }, cancellationToken);
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
 
             return new AuthResponse
             {
@@ -201,6 +234,7 @@ public sealed class AuthService : IAuthService
                 DisplayName = user.DisplayName,
                 Email = user.Email,
                 AccessToken = tokenResult.AccessToken,
+                RefreshToken = tokenResult.RefreshToken,
                 ExpiresAt = tokenResult.ExpiresAt,
                 Roles = roleCodes,
                 Permissions = permissionCodes
@@ -208,12 +242,206 @@ public sealed class AuthService : IAuthService
         }
 
         /// <summary>
-        /// 获取用户的角色代码列表
+        /// 修改密码
         /// </summary>
-        /// <param name="tenantId">租户ID</param>
-        /// <param name="userId">用户ID</param>
-        /// <param name="cancellationToken">取消令牌</param>
-        /// <returns>角色代码的只读集合</returns>
+        public async Task ChangePasswordAsync(Guid userId, Guid tenantId, ChangePasswordRequest request, CancellationToken cancellationToken)
+        {
+            var user = await _dbContext.Users
+                .SingleOrDefaultAsync(x => x.Id == userId, cancellationToken)
+                ?? throw new InvalidOperationException("User does not exist.");
+
+            if (!_passwordHasher.Verify(request.OldPassword, user.PasswordHash, user.PasswordSalt))
+            {
+                throw new InvalidOperationException("Old password is incorrect.");
+            }
+
+            var passwordResult = _passwordHasher.HashPassword(request.NewPassword);
+            user.PasswordHash = passwordResult.Hash;
+            user.PasswordSalt = passwordResult.Salt;
+            user.UpdatedAt = DateTime.UtcNow;
+
+            var activeRefreshTokens = await _dbContext.RefreshTokens
+                .Where(x => x.UserId == userId && !x.IsUsed)
+                .ToListAsync(cancellationToken);
+
+            foreach (var token in activeRefreshTokens)
+            {
+                token.IsUsed = true;
+            }
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        /// <summary>
+        /// 忘记密码：生成重置 token 并发送邮件
+        /// </summary>
+        public async Task ForgotPasswordAsync(ForgotPasswordRequest request, CancellationToken cancellationToken)
+        {
+            var tenant = await _dbContext.Tenants
+                .AsNoTracking()
+                .SingleOrDefaultAsync(x => x.Code == request.TenantCode, cancellationToken);
+
+            if (tenant is null || !tenant.IsActive)
+            {
+                // 不暴露租户是否存在，统一返回成功
+                return;
+            }
+
+            var user = await _dbContext.Users
+                .AsNoTracking()
+                .SingleOrDefaultAsync(x => x.Email == request.Email, cancellationToken);
+
+            if (user is null || !user.IsActive)
+            {
+                // 不暴露用户是否存在
+                return;
+            }
+
+            // 生成 JWT 短期重置 token（15 分钟有效）
+            var resetToken = GeneratePasswordResetToken(user.Id, tenant.Id);
+            await _emailService.SendPasswordResetEmailAsync(user.Email, resetToken, cancellationToken);
+        }
+
+        /// <summary>
+        /// 重置密码：验证 token 后设置新密码
+        /// </summary>
+        public async Task ResetPasswordAsync(ConfirmResetPasswordRequest request, CancellationToken cancellationToken)
+        {
+            var principal = ValidatePasswordResetToken(request.Token);
+            if (principal is null)
+            {
+                throw new InvalidOperationException("Invalid or expired reset token.");
+            }
+
+            var userIdClaim = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var purposeClaim = principal.FindFirst("purpose")?.Value;
+
+            if (userIdClaim is null || purposeClaim != "password_reset")
+            {
+                throw new InvalidOperationException("Invalid reset token.");
+            }
+
+            if (!Guid.TryParse(userIdClaim, out var userId))
+            {
+                throw new InvalidOperationException("Invalid reset token.");
+            }
+
+            var user = await _dbContext.Users
+                .SingleOrDefaultAsync(x => x.Id == userId && x.Email == request.Email, cancellationToken)
+                ?? throw new InvalidOperationException("User does not exist.");
+
+            var passwordResult = _passwordHasher.HashPassword(request.NewPassword);
+            user.PasswordHash = passwordResult.Hash;
+            user.PasswordSalt = passwordResult.Salt;
+            user.UpdatedAt = DateTime.UtcNow;
+
+            // 撤销所有 Refresh Token
+            var activeRefreshTokens = await _dbContext.RefreshTokens
+                .Where(x => x.UserId == userId && !x.IsUsed)
+                .ToListAsync(cancellationToken);
+
+            foreach (var token in activeRefreshTokens)
+            {
+                token.IsUsed = true;
+            }
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        /// <summary>
+        /// 构建认证响应（含 Refresh Token 存储）
+        /// </summary>
+        private async Task<AuthResponse> BuildAuthResponseAsync(User user, Tenant tenant, CancellationToken cancellationToken)
+        {
+            var roleCodes = await GetRoleCodesAsync(tenant.Id, user.Id, cancellationToken);
+            var permissionCodes = await GetPermissionCodesAsync(tenant.Id, user.Id, cancellationToken);
+            var tokenResult = _tokenService.CreateToken(user, tenant, roleCodes, permissionCodes);
+
+            var tokenHash = ComputeSha256Hash(tokenResult.RefreshToken);
+            await _dbContext.RefreshTokens.AddAsync(new RefreshToken
+            {
+                Id = Guid.NewGuid(),
+                UserId = user.Id,
+                TokenHash = tokenHash,
+                ExpiresAt = DateTime.UtcNow.AddDays(_jwtOptions.RefreshTokenExpiresDays),
+                IsUsed = false,
+                CreatedAt = DateTime.UtcNow
+            }, cancellationToken);
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            return new AuthResponse
+            {
+                UserId = user.Id,
+                TenantId = tenant.Id,
+                TenantCode = tenant.Code,
+                UserName = user.UserName,
+                DisplayName = user.DisplayName,
+                Email = user.Email,
+                AccessToken = tokenResult.AccessToken,
+                RefreshToken = tokenResult.RefreshToken,
+                ExpiresAt = tokenResult.ExpiresAt,
+                Roles = roleCodes,
+                Permissions = permissionCodes
+            };
+        }
+
+        /// <summary>
+        /// 生成密码重置 JWT Token（15 分钟有效）
+        /// </summary>
+        private string GeneratePasswordResetToken(Guid userId, Guid tenantId)
+        {
+            var now = DateTime.UtcNow;
+            var claims = new List<Claim>
+            {
+                new(ClaimTypes.NameIdentifier, userId.ToString()),
+                new("tenant_id", tenantId.ToString()),
+                new("purpose", "password_reset"),
+                new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+            };
+
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtOptions.SigningKey));
+            var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+
+            var token = new JwtSecurityToken(
+                issuer: _jwtOptions.Issuer,
+                audience: _jwtOptions.Audience,
+                claims: claims,
+                notBefore: now,
+                expires: now.AddMinutes(15),
+                signingCredentials: credentials);
+
+            return new JwtSecurityTokenHandler().WriteToken(token);
+        }
+
+        /// <summary>
+        /// 验证密码重置 Token
+        /// </summary>
+        private ClaimsPrincipal? ValidatePasswordResetToken(string token)
+        {
+            var tokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidateAudience = true,
+                ValidateIssuerSigningKey = true,
+                ValidateLifetime = true,
+                ValidIssuer = _jwtOptions.Issuer,
+                ValidAudience = _jwtOptions.Audience,
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtOptions.SigningKey)),
+                ClockSkew = TimeSpan.Zero
+            };
+
+            try
+            {
+                return new JwtSecurityTokenHandler().ValidateToken(
+                    token, tokenValidationParameters, out var securityToken);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         private async Task<IReadOnlyCollection<string>> GetRoleCodesAsync(Guid tenantId, Guid userId, CancellationToken cancellationToken)
         {
             return await _dbContext.UserRoles
@@ -225,13 +453,6 @@ public sealed class AuthService : IAuthService
                 .ToListAsync(cancellationToken);
         }
 
-        /// <summary>
-        /// 获取用户的权限代码列表
-        /// </summary>
-        /// <param name="tenantId">租户ID</param>
-        /// <param name="userId">用户ID</param>
-        /// <param name="cancellationToken">取消令牌</param>
-        /// <returns>权限代码的只读集合</returns>
         private async Task<IReadOnlyCollection<string>> GetPermissionCodesAsync(Guid tenantId, Guid userId, CancellationToken cancellationToken)
         {
             return await (from userRole in _dbContext.UserRoles.AsNoTracking()
@@ -246,13 +467,6 @@ public sealed class AuthService : IAuthService
                 .ToListAsync(cancellationToken);
         }
 
-        /// <summary>
-        /// 确保用户名和邮箱的唯一性
-        /// </summary>
-        /// <param name="userName">用户名</param>
-        /// <param name="email">邮箱地址</param>
-        /// <param name="cancellationToken">取消令牌</param>
-        /// <exception cref="InvalidOperationException">当用户名或邮箱已存在时抛出</exception>
         private async Task EnsureUserNameAndEmailAreUniqueAsync(string userName, string email, CancellationToken cancellationToken)
         {
             var normalizedUserName = userName.Trim();
@@ -265,6 +479,12 @@ public sealed class AuthService : IAuthService
             {
                 throw new InvalidOperationException("User name or email already exists.");
             }
+        }
+
+        private static string ComputeSha256Hash(string rawValue)
+        {
+            var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(rawValue));
+            return Convert.ToBase64String(hashBytes);
         }
     }
 }

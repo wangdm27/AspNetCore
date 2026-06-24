@@ -39,5 +39,10 @@ namespace AspNetCore.Api.Modules.Tenancy.Services
         /// <param name="cancellationToken">取消令牌</param>
         /// <returns>任务</returns>
         Task AddUserAsync(Guid tenantId, AddTenantUserRequest request, CancellationToken cancellationToken);
+
+        /// <summary>
+        /// 更新租户信息
+        /// </summary>
+        Task<TenantResponse> UpdateAsync(Guid tenantId, UpdateTenantRequest request, CancellationToken cancellationToken);
     }
 }

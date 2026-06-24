@@ -296,15 +296,12 @@ namespace AspNetCore.Api.Modules.Identity.Services
             await EnsureTenantUserAsync(tenantId, userId, cancellationToken);
             var normalizedRoleIds = await ValidateRoleIdsAsync(tenantId, roleIds, cancellationToken);
 
-            // 获取当前角色分配
             var currentAssignments = await _dbContext.UserRoles
                 .Where(x => x.TenantId == tenantId && x.UserId == userId)
                 .ToListAsync(cancellationToken);
 
-            // 删除现有角色分配
             _dbContext.UserRoles.RemoveRange(currentAssignments);
 
-            // 添加新角色分配
             var utcNow = DateTime.UtcNow;
             var newAssignments = normalizedRoleIds.Select(roleId => new UserRole
             {
@@ -315,6 +312,23 @@ namespace AspNetCore.Api.Modules.Identity.Services
             });
 
             await _dbContext.UserRoles.AddRangeAsync(newAssignments, cancellationToken);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        /// <summary>
+        /// 重置用户密码（管理员操作，不需要旧密码）
+        /// </summary>
+        public async Task ResetPasswordAsync(Guid tenantId, Guid userId, ResetPasswordRequest request, CancellationToken cancellationToken)
+        {
+            await EnsureTenantUserAsync(tenantId, userId, cancellationToken);
+            var user = await _dbContext.Users.SingleOrDefaultAsync(x => x.Id == userId, cancellationToken)
+                ?? throw new InvalidOperationException("User does not exist.");
+
+            var passwordResult = _passwordHasher.HashPassword(request.NewPassword);
+            user.PasswordHash = passwordResult.Hash;
+            user.PasswordSalt = passwordResult.Salt;
+            user.UpdatedAt = DateTime.UtcNow;
+
             await _dbContext.SaveChangesAsync(cancellationToken);
         }
 

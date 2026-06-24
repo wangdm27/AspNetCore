@@ -11,7 +11,9 @@ namespace AspNetCore.DataAccess
         }
 
         public DbSet<Menu> Menus => Set<Menu>();
+        public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
         public DbSet<Permission> Permissions => Set<Permission>();
+        public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
         public DbSet<Role> Roles => Set<Role>();
         public DbSet<RolePermission> RolePermissions => Set<RolePermission>();
         public DbSet<SampleEntity> SampleEntities => Set<SampleEntity>();
@@ -32,6 +34,8 @@ namespace AspNetCore.DataAccess
             ConfigurePermission(modelBuilder);
             ConfigureRolePermission(modelBuilder);
             ConfigureUserRole(modelBuilder);
+            ConfigureRefreshToken(modelBuilder);
+            ConfigureAuditLog(modelBuilder);
             ConfigureMenu(modelBuilder);
         }
 
@@ -168,6 +172,37 @@ namespace AspNetCore.DataAccess
                     .WithMany(x => x.Children)
                     .HasForeignKey(x => x.ParentId)
                     .OnDelete(DeleteBehavior.Restrict);
+            });
+        }
+
+        private static void ConfigureAuditLog(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<AuditLog>(entity =>
+            {
+                entity.HasKey(x => x.Id);
+                entity.HasIndex(x => x.TenantId);
+                entity.HasIndex(x => x.EntityType);
+                entity.HasIndex(x => x.CreatedAt);
+                entity.Property(x => x.UserName).HasMaxLength(50).IsRequired();
+                entity.Property(x => x.Action).HasMaxLength(50).IsRequired();
+                entity.Property(x => x.EntityType).HasMaxLength(50).IsRequired();
+                entity.Property(x => x.Details).HasMaxLength(2000);
+                entity.Property(x => x.IpAddress).HasMaxLength(45);
+                entity.Property(x => x.UserAgent).HasMaxLength(500);
+            });
+        }
+
+        private static void ConfigureRefreshToken(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<RefreshToken>(entity =>
+            {
+                entity.HasKey(x => x.Id);
+                entity.HasIndex(x => x.TokenHash).IsUnique();
+                entity.Property(x => x.TokenHash).HasMaxLength(256).IsRequired();
+                entity.HasOne(x => x.User)
+                    .WithMany()
+                    .HasForeignKey(x => x.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
         }
     }

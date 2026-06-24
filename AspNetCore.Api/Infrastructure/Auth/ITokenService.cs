@@ -1,5 +1,6 @@
 using AspNetCore.Api.Modules.Identity.Models;
 using AspNetCore.DataAccess.Entities;
+using System.Security.Claims;
 
 namespace AspNetCore.Api.Infrastructure.Auth
 {
@@ -11,11 +12,16 @@ namespace AspNetCore.Api.Infrastructure.Auth
         /// <summary>
         /// 创建访问令牌
         /// </summary>
-        /// <param name="user">用户实体</param>
-        /// <param name="tenant">租户实体</param>
-        /// <param name="roleCodes">角色代码集合</param>
-        /// <param name="permissionCodes">权限代码集合</param>
-        /// <returns>Token 结果，包含访问令牌和过期时间</returns>
         TokenResult CreateToken(User user, Tenant tenant, IReadOnlyCollection<string> roleCodes, IReadOnlyCollection<string> permissionCodes);
+
+        /// <summary>
+        /// 生成 Refresh Token 原始值
+        /// </summary>
+        string GenerateRefreshToken();
+
+        /// <summary>
+        /// 从过期的 Access Token 中提取 Claims（验证签名但忽略过期）
+        /// </summary>
+        ClaimsPrincipal? GetPrincipalFromExpiredToken(string accessToken);
     }
 }
