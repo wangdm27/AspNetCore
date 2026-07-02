@@ -1,5 +1,6 @@
-using AspNetCore.Redis;
 using StackExchange.Redis;
+
+namespace AspNetCore.Redis;
 
 /// <summary>
 /// Redis 客户端实现，基于 StackExchange.Redis 库提供 Redis 操作功能
@@ -134,6 +135,17 @@ public class RedisClient : IRedisClient
 
     public async Task<bool> LockAsync(string key, string value, TimeSpan expiry)
     {
-         return await _db.StringSetAsync(BuildKey(key), value, expiry, When.NotExists);
+        return await _db.LockTakeAsync(BuildKey(key), value, expiry);
+    }
+
+    /// <summary>
+    /// 释放分布式锁，仅当 value 与持有者标识匹配时删除（CAS 语义）
+    /// </summary>
+    /// <param name="key">Redis 键</param>
+    /// <param name="value">锁持有者标识，须与获取时一致</param>
+    /// <returns>是否成功释放</returns>
+    public async Task<bool> LockReleaseAsync(string key, string value)
+    {
+        return await _db.LockReleaseAsync(BuildKey(key), value);
     }
 }

@@ -69,8 +69,16 @@ public interface IRedisClient
     /// 用于实现分布式锁
     /// </summary>
     /// <param name="key">Redis 键</param>
-    /// <param name="value">要设置的值</param>
-    /// <param name="expiry">过期时间</param>
+    /// <param name="value">要设置的值（锁持有者标识，通常为 Guid）</param>
+    /// <param name="expiry">过期时间（锁自动释放时限）</param>
     /// <returns>是否成功获取锁</returns>
     Task<bool> LockAsync(string key, string value, TimeSpan expiry);
+
+    /// <summary>
+    /// 释放分布式锁，仅当 value 与持有者标识匹配时删除（CAS 语义，防止误释放他人持有的锁）
+    /// </summary>
+    /// <param name="key">Redis 键</param>
+    /// <param name="value">锁持有者标识，须与获取时一致</param>
+    /// <returns>是否成功释放（false 表示锁不存在或非本人持有）</returns>
+    Task<bool> LockReleaseAsync(string key, string value);
 }

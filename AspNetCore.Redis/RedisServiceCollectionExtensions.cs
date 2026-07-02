@@ -1,6 +1,7 @@
-using AspNetCore.Redis;
 using Microsoft.Extensions.DependencyInjection;
 using StackExchange.Redis;
+
+namespace AspNetCore.Redis;
 
 /// <summary>
 /// Redis 服务集合扩展类，提供 Redis 相关服务的注册方法
@@ -18,6 +19,7 @@ public static class RedisServiceCollectionExtensions
         var options = new RedisOptions();
         configure(options);
 
+        services.AddSingleton(options);
         services.AddSingleton<IConnectionMultiplexer>(_ =>
             ConnectionMultiplexer.Connect(options.ConnectionString));
         services.AddSingleton<IRedisSerializer, JsonRedisSerializer>();
