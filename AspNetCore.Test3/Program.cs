@@ -1,7 +1,6 @@
 using AspNetCore.RabbitMq;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using static AspNetCore.Test3.DemoConsumer;
 
 namespace AspNetCore.Test3
 {

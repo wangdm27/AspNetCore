@@ -7,78 +7,59 @@ namespace AspNetCore.RabbitMq
     /// RabbitMQ通道池实现
     /// </summary>
     /// <remarks>
-    /// 管理RabbitMQ通道的创建、复用和释放，提高性能并减少资源消耗
+    /// 管理RabbitMQ通道的创建、复用和释放，提高性能并减少资源消耗。
+    /// 所有通道创建时开启发布确认模式并绑定 ChannelConfirmTracker。
     /// </remarks>
     internal sealed class RabbitMqChannelPool : IRabbitMqChannelPool, IRabbitMqChannelPoolLease
     {
-        /// <summary>
-        /// RabbitMQ连接实例
-        /// </summary>
         private readonly IRabbitMqConnection _connection;
-        
-        /// <summary>
-        /// 通道池，使用并发队列存储空闲通道
-        /// </summary>
-        private readonly ConcurrentQueue<IChannel> _pool = new();
-        
-        /// <summary>
-        /// 信号量，用于控制最大并发通道数
-        /// </summary>
+        private readonly ConcurrentQueue<(IChannel Channel, ChannelConfirmTracker Tracker)> _pool = new();
         private readonly SemaphoreSlim _gate;
-        
-        /// <summary>
-        /// 释放状态标记
-        /// </summary>
         private volatile bool _disposed;
 
         /// <summary>
         /// 初始化通道池
         /// </summary>
         /// <param name="connection">RabbitMQ连接实例</param>
-        /// <param name="options">RabbitMQ配置选项</param>
-        public RabbitMqChannelPool(IRabbitMqConnection connection, RabbitMqOptions options)
+        /// <param name="poolSize">通道池大小（由调用方传入，区分发布者/消费者池）</param>
+        public RabbitMqChannelPool(IRabbitMqConnection connection, int poolSize)
         {
             _connection = connection;
-            _gate = new SemaphoreSlim(options.ChannelPoolSize, options.ChannelPoolSize);
+            _gate = new SemaphoreSlim(poolSize, poolSize);
         }
 
         /// <summary>
         /// 从通道池获取一个通道
         /// </summary>
-        /// <param name="cancellationToken">取消令牌</param>
-        /// <returns>池化通道租赁对象</returns>
-        /// <remarks>
-        /// 优先从池中获取空闲通道，如果没有则创建新通道
-        /// </remarks>
         public async ValueTask<PooledChannelLease> RentAsync(CancellationToken cancellationToken = default)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
 
-            // 等待信号量，控制并发通道数
             await _gate.WaitAsync(cancellationToken);
 
             try
             {
-                // 尝试从池中获取通道
-                while (_pool.TryDequeue(out var channel))
+                while (_pool.TryDequeue(out var entry))
                 {
-                    if (channel.IsOpen)
+                    if (entry.Channel.IsOpen)
                     {
-                        return new PooledChannelLease(channel, this);
+                        return new PooledChannelLease(entry.Channel, entry.Tracker, this);
                     }
 
-                    // 通道已关闭，释放资源
-                    await channel.DisposeAsync();
+                    await entry.Tracker.DisposeAsync();
+                    await entry.Channel.DisposeAsync();
                 }
 
-                // 池中没有可用通道，创建新通道
                 var conn = await _connection.GetConnectionAsync();
-                var created = await conn.CreateChannelAsync(cancellationToken: cancellationToken);
-                return new PooledChannelLease(created, this);
+                var options = new CreateChannelOptions(
+                    publisherConfirmationsEnabled: true,
+                    publisherConfirmationTrackingEnabled: true);
+                var channel = await conn.CreateChannelAsync(options, cancellationToken);
+                var tracker = new ChannelConfirmTracker(channel);
+                return new PooledChannelLease(channel, tracker, this);
             }
             catch
             {
-                // 发生异常时释放信号量
                 _gate.Release();
                 throw;
             }
@@ -87,25 +68,26 @@ namespace AspNetCore.RabbitMq
         /// <summary>
         /// 归还通道到池
         /// </summary>
-        /// <param name="channel">要归还的通道</param>
-        /// <remarks>
-        /// 如果池已释放或通道已关闭，则直接释放通道
-        /// 否则将通道放回池中供后续使用
-        /// </remarks>
-        public async ValueTask ReturnAsync(IChannel channel)
+        public async ValueTask ReturnAsync(IChannel channel, ChannelConfirmTracker tracker)
         {
-            if (_disposed || !channel.IsOpen)
+            // 池已释放（如应用关停时池先于租约归还被释放）：仅清理资源，不触碰已释放的信号量。
+            if (_disposed)
             {
-                // 池已释放或通道已关闭，直接释放通道
+                await tracker.DisposeAsync();
+                await channel.DisposeAsync();
+                return;
+            }
+
+            if (!channel.IsOpen)
+            {
+                await tracker.DisposeAsync();
                 await channel.DisposeAsync();
             }
             else
             {
-                // 将通道放回池中
-                _pool.Enqueue(channel);
+                _pool.Enqueue((channel, tracker));
             }
 
-            // 释放信号量
             _gate.Release();
         }
 
@@ -120,14 +102,13 @@ namespace AspNetCore.RabbitMq
             }
 
             _disposed = true;
-            
-            // 释放池中所有通道
-            while (_pool.TryDequeue(out var channel))
+
+            while (_pool.TryDequeue(out var entry))
             {
-                await channel.DisposeAsync();
+                await entry.Tracker.DisposeAsync();
+                await entry.Channel.DisposeAsync();
             }
 
-            // 释放信号量
             _gate.Dispose();
         }
     }

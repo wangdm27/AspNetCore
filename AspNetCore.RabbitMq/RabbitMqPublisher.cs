@@ -1,8 +1,6 @@
 using RabbitMQ.Client;
-using RabbitMQ.Client.Events;
 using System.Text;
 using System.Text.Json;
-using RabbitMQ.Client;
 
 namespace AspNetCore.RabbitMq
 {
@@ -10,62 +8,54 @@ namespace AspNetCore.RabbitMq
     /// RabbitMQ消息发布者实现
     /// </summary>
     /// <remarks>
-    /// 负责将消息发布到RabbitMQ交换机，支持对象序列化和原始字节发布
+    /// 负责将消息发布到RabbitMQ交换机，支持对象序列化和原始字节发布。
+    /// 支持发布确认（confirm）与延迟投递（delayMs）。
     /// </remarks>
     internal sealed class RabbitMqPublisher : IRabbitMqPublisher
     {
-        /// <summary>
-        /// 通道池实例
-        /// </summary>
         private readonly IRabbitMqChannelPool _channelPool;
+        private readonly RabbitMqOptions _options;
 
         /// <summary>
         /// 初始化消息发布者
         /// </summary>
         /// <param name="channelPool">通道池实例</param>
-        public RabbitMqPublisher(IRabbitMqChannelPool channelPool)
+        /// <param name="options">RabbitMQ配置选项</param>
+        public RabbitMqPublisher(IRabbitMqChannelPool channelPool, RabbitMqOptions options)
         {
             _channelPool = channelPool;
+            _options = options;
         }
 
         /// <summary>
         /// 发布消息到RabbitMQ
         /// </summary>
-        /// <typeparam name="T">消息类型</typeparam>
-        /// <param name="exchange">交换机名称</param>
-        /// <param name="routingKey">路由键</param>
-        /// <param name="message">消息内容</param>
-        /// <param name="props">消息属性配置委托</param>
-        /// <param name="cancellationToken">取消令牌</param>
-        /// <returns>表示异步发布操作的任务</returns>
         /// <remarks>
-        /// 此方法将消息序列化为JSON字节，然后调用PublishRawAsync发布
+        /// string 走 UTF-8 编码，其余类型 JSON 序列化，然后调用 PublishRawAsync。
         /// </remarks>
         public ValueTask PublishAsync<T>(
             string exchange,
             string routingKey,
             T message,
+            Action<IBasicProperties>? props = null,
             bool confirm = true,
             int? delayMs = null,
             CancellationToken cancellationToken = default)
         {
-            var body = JsonSerializer.SerializeToUtf8Bytes(message);
-            return PublishRawAsync(exchange, routingKey, body, null, props, cancellationToken);
+            var body = message switch
+            {
+                string s => Encoding.UTF8.GetBytes(s),
+                _ => JsonSerializer.SerializeToUtf8Bytes(message)
+            };
+            return PublishRawAsync(exchange, routingKey, body, null, props, confirm, delayMs, cancellationToken);
         }
 
         /// <summary>
         /// 发布原始字节消息到RabbitMQ
         /// </summary>
-        /// <param name="exchange">交换机名称</param>
-        /// <param name="routingKey">路由键</param>
-        /// <param name="body">原始消息体字节数据</param>
-        /// <param name="headers">消息头字典</param>
-        /// <param name="props">消息属性配置委托</param>
-        /// <param name="cancellationToken">取消令牌</param>
-        /// <returns>表示异步发布操作的任务</returns>
         /// <remarks>
-        /// 此方法从通道池获取通道，设置消息属性，然后发布消息
-        /// 消息默认设置为持久化
+        /// 从通道池获取通道（独占租约），设置消息属性与延迟头，
+        /// 发布后按 confirm 等待 broker 确认。
         /// </remarks>
         public async ValueTask PublishRawAsync(
             string exchange,
@@ -73,29 +63,66 @@ namespace AspNetCore.RabbitMq
             ReadOnlyMemory<byte> body,
             IDictionary<string, object?>? headers = null,
             Action<IBasicProperties>? props = null,
+            bool confirm = true,
+            int? delayMs = null,
             CancellationToken cancellationToken = default)
         {
-            // 从通道池获取通道
             await using var lease = await _channelPool.RentAsync(cancellationToken);
+            var channel = lease.Channel;
+            var tracker = lease.Tracker;
 
-            // 创建消息属性，默认设置为持久化
+            var headersDict = headers?.ToDictionary(static kvp => kvp.Key, static kvp => kvp.Value)
+                              ?? new Dictionary<string, object?>();
+            if (delayMs is { } delay)
+            {
+                headersDict["x-delay"] = (int)delay;
+            }
+
             var properties = new BasicProperties
             {
                 Persistent = true,
-                Headers = headers?.ToDictionary(static kvp => kvp.Key, static kvp => kvp.Value)
+                Headers = headersDict
             };
-
-            // 应用自定义属性配置
             props?.Invoke(properties);
 
-            // 发布消息到RabbitMQ
-            await lease.Channel.BasicPublishAsync(
-                exchange: exchange,
-                routingKey: routingKey,
-                mandatory: false,
-                basicProperties: properties,
-                body: body,
-                cancellationToken: cancellationToken);
+            ulong seq = 0;
+            TaskCompletionSource<PublishConfirmResult>? tcs = null;
+            if (confirm && tracker is not null)
+            {
+                seq = await channel.GetNextPublishSequenceNumberAsync(cancellationToken);
+                tcs = tracker.Register(seq);
+            }
+
+            try
+            {
+                await channel.BasicPublishAsync(
+                    exchange: exchange,
+                    routingKey: routingKey,
+                    mandatory: false,
+                    basicProperties: properties,
+                    body: body,
+                    cancellationToken: cancellationToken);
+
+                if (confirm && tcs is not null)
+                {
+                    var result = await tracker!.WaitAsync(seq, _options.PublisherConfirmTimeout, cancellationToken);
+                    switch (result)
+                    {
+                        case PublishConfirmResult.Nacked:
+                            throw new RabbitMqPublishNackedException(seq);
+                        case PublishConfirmResult.TimedOut:
+                            throw new TimeoutException(
+                                $"RabbitMQ publish confirm timed out after {_options.PublisherConfirmTimeout}.");
+                    }
+                }
+            }
+            finally
+            {
+                if (tcs is not null)
+                {
+                    tracker!.Remove(seq);
+                }
+            }
         }
     }
 }

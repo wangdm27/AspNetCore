@@ -37,18 +37,16 @@ namespace AspNetCore.RabbitMq
         /// <summary>
         /// 获取待处理的消息
         /// </summary>
-        /// <param name="takeCount">要获取的消息数量</param>
-        /// <param name="cancellationToken">取消令牌</param>
-        /// <returns>待处理消息的只读列表</returns>
         /// <remarks>
-        /// 1. 筛选未发布的消息（PublishedAt为null）
-        /// 2. 按创建时间排序，确保先处理较早的消息
-        /// 3. 限制返回数量，避免一次处理太多消息
+        /// 1. 筛选未发布且未转死信的消息
+        /// 2. 过滤重试时间未到的消息（NextAttemptAt > now）
+        /// 3. 按创建时间排序，限制返回数量
         /// </remarks>
-        public Task<IReadOnlyList<RabbitMqOutboxMessage>> GetPendingAsync(int takeCount, CancellationToken cancellationToken = default)
+        public Task<IReadOnlyList<RabbitMqOutboxMessage>> GetPendingAsync(DateTimeOffset now, int takeCount, CancellationToken cancellationToken = default)
         {
             var result = _messages.Values
-                .Where(x => x.PublishedAt is null)
+                .Where(x => x.PublishedAt is null && !x.DeadLettered
+                    && (x.NextAttemptAt is null || x.NextAttemptAt <= now))
                 .OrderBy(x => x.CreatedAt)
                 .Take(takeCount)
                 .ToArray();
@@ -80,20 +78,32 @@ namespace AspNetCore.RabbitMq
         /// <summary>
         /// 标记消息为发布失败
         /// </summary>
-        /// <param name="messageId">消息ID</param>
-        /// <param name="error">错误信息</param>
-        /// <param name="cancellationToken">取消令牌</param>
-        /// <returns>表示异步操作的任务</returns>
         /// <remarks>
-        /// 根据消息ID查找消息，记录错误信息并增加重试计数
-        /// 静默处理消息不存在的情况
+        /// 记录错误信息、增加重试计数、设置下次重试时间
         /// </remarks>
-        public Task MarkAsFailedAsync(Guid messageId, string error, CancellationToken cancellationToken = default)
+        public Task MarkAsFailedAsync(Guid messageId, string error, DateTimeOffset nextAttemptAt, CancellationToken cancellationToken = default)
         {
             if (_messages.TryGetValue(messageId, out var msg))
             {
                 msg.LastError = error;
                 msg.RetryCount += 1;
+                msg.NextAttemptAt = nextAttemptAt;
+            }
+
+            return Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// 标记消息为已转死信
+        /// </summary>
+        /// <remarks>
+        /// 设置 DeadLettered 标志，使其不再被 GetPendingAsync 取出
+        /// </remarks>
+        public Task MarkAsDeadLetterAsync(Guid messageId, CancellationToken cancellationToken = default)
+        {
+            if (_messages.TryGetValue(messageId, out var msg))
+            {
+                msg.DeadLettered = true;
             }
 
             return Task.CompletedTask;

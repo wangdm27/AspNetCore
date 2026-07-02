@@ -24,15 +24,14 @@ namespace AspNetCore.RabbitMq
         /// <summary>
         /// 获取待处理的消息
         /// </summary>
+        /// <param name="now">当前时间，用于过滤未到重试时间的消息</param>
         /// <param name="takeCount">要获取的消息数量</param>
         /// <param name="cancellationToken">取消令牌</param>
         /// <returns>待处理消息的只读列表</returns>
         /// <remarks>
-        /// 通常返回未发布的消息，按创建时间排序
-        /// 用于后台处理器批量获取消息进行发布
+        /// 返回未发布、未转死信、且重试时间已到（或无重试时间）的消息，按创建时间排序。
         /// </remarks>
-        /// <exception cref="ArgumentOutOfRangeException">当takeCount小于等于0时抛出</exception>
-        Task<IReadOnlyList<RabbitMqOutboxMessage>> GetPendingAsync(int takeCount, CancellationToken cancellationToken = default);
+        Task<IReadOnlyList<RabbitMqOutboxMessage>> GetPendingAsync(DateTimeOffset now, int takeCount, CancellationToken cancellationToken = default);
         
         /// <summary>
         /// 标记消息为已发布
@@ -53,15 +52,15 @@ namespace AspNetCore.RabbitMq
         /// </summary>
         /// <param name="messageId">消息ID</param>
         /// <param name="error">错误信息</param>
+        /// <param name="nextAttemptAt">下次允许重试时间</param>
         /// <param name="cancellationToken">取消令牌</param>
-        /// <returns>表示异步操作的任务</returns>
-        /// <remarks>
-        /// 当消息发布失败时调用此方法
-        /// 记录错误信息，通常还会增加重试计数
-        /// 用于后续的重试逻辑
-        /// </remarks>
-        /// <exception cref="ArgumentException">当messageId为空时抛出</exception>
-        /// <exception cref="ArgumentNullException">当error为null时抛出</exception>
-        Task MarkAsFailedAsync(Guid messageId, string error, CancellationToken cancellationToken = default);
+        Task MarkAsFailedAsync(Guid messageId, string error, DateTimeOffset nextAttemptAt, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// 标记消息为已转死信
+        /// </summary>
+        /// <param name="messageId">消息ID</param>
+        /// <param name="cancellationToken">取消令牌</param>
+        Task MarkAsDeadLetterAsync(Guid messageId, CancellationToken cancellationToken = default);
     }
 }

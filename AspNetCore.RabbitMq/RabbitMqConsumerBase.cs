@@ -1,8 +1,5 @@
-﻿using RabbitMQ.Client;
+using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
-using System;
-using System.Collections.Generic;
-using System.Text;
 using System.Text.Json;
 
 namespace AspNetCore.RabbitMq
@@ -12,128 +9,122 @@ namespace AspNetCore.RabbitMq
     /// </summary>
     /// <typeparam name="T">消息类型</typeparam>
     /// <remarks>
-    /// 提供了RabbitMQ消费者的基本实现，包括队列声明、绑定和消息处理
-    /// 子类需要实现队列、交换机和路由键的配置，以及消息处理逻辑
+    /// 提供RabbitMQ消费者的基本实现，包括交换机/队列声明、绑定、死信配置和消息处理。
+    /// 消费者从消费者通道池租用通道，长租持至 Dispose 归还（归还前先 BasicCancel 停止消费，使通道可被复用）。
+    /// 子类需实现队列、交换机、路由键配置，以及消息处理逻辑。
     /// </remarks>
-    public abstract class RabbitMqConsumerBase<T> : IRabbitMqConsumer where T : class
+    public abstract class RabbitMqConsumerBase<T> : IRabbitMqConsumer, IAsyncDisposable where T : class
     {
-        /// <summary>
-        /// RabbitMQ连接实例
-        /// </summary>
-        private readonly IRabbitMqConnection _connection;
-
-        /// <summary>
-        /// RabbitMQ配置选项
-        /// </summary>
+        private readonly IRabbitMqChannelPool _channelPool;
         private readonly RabbitMqOptions _options;
+        private PooledChannelLease? _lease;
+        private IChannel? _channel;
+        private string? _consumerTag;
 
         /// <summary>
         /// 队列名称
         /// </summary>
-        /// <remarks>
-        /// 子类必须实现此属性，返回要消费的队列名称
-        /// </remarks>
         protected abstract string Queue { get; }
 
         /// <summary>
         /// 交换机名称
         /// </summary>
-        /// <remarks>
-        /// 子类必须实现此属性，返回要绑定的交换机名称
-        /// </remarks>
         protected abstract string Exchange { get; }
 
         /// <summary>
         /// 路由键
         /// </summary>
-        /// <remarks>
-        /// 子类必须实现此属性，返回队列绑定的路由键
-        /// </remarks>
         protected abstract string RoutingKey { get; }
+
+        /// <summary>
+        /// 交换机类型，子类可覆盖，默认 direct。
+        /// </summary>
+        protected virtual string ExchangeType => "direct";
 
         /// <summary>
         /// 初始化消费者基类
         /// </summary>
-        /// <param name="connection">RabbitMQ连接实例</param>
+        /// <param name="channelPool">消费者通道池实例</param>
         /// <param name="options">RabbitMQ配置选项</param>
-        protected RabbitMqConsumerBase(IRabbitMqConnection connection, RabbitMqOptions options)
+        protected RabbitMqConsumerBase(IRabbitMqChannelPool channelPool, RabbitMqOptions options)
         {
-            _connection = connection;
+            _channelPool = channelPool;
             _options = options;
         }
 
         /// <summary>
         /// 启动消费者
         /// </summary>
-        /// <param name="cancellationToken">取消令牌</param>
-        /// <returns>表示异步启动操作的任务</returns>
         /// <remarks>
-        /// 此方法执行以下操作：
-        /// 1. 获取RabbitMQ连接和通道
+        /// 1. 从消费者池租用通道
         /// 2. 声明交换机
-        /// 3. 声明队列
-        /// 4. 绑定队列到交换机
-        /// 5. 设置QoS
-        /// 6. 创建消费者
-        /// 7. 注册消息接收事件处理
+        /// 3. 若启用死信：声明 DLX + DLQ + 绑定，主队列带死信参数
+        /// 4. 声明主队列
+        /// 5. 绑定主队列到交换机
+        /// 6. 设置QoS
+        /// 7. 创建消费者并注册消息接收事件
         /// 8. 开始消费消息
         /// </remarks>
-        /// <exception cref="RabbitMQ.Client.Exceptions.BrokerUnreachableException">当无法连接到RabbitMQ服务器时抛出</exception>
-        /// <exception cref="RabbitMQ.Client.Exceptions.AlreadyClosedException">当RabbitMQ连接已关闭时抛出</exception>
         public async Task StartAsync(CancellationToken cancellationToken = default)
         {
-            var conn = await _connection.GetConnectionAsync();
-            var channel = await conn.CreateChannelAsync();
+            if (_lease is not null)
+            {
+                throw new InvalidOperationException("Consumer already started; dispose before restarting.");
+            }
 
-            // 死信队列参数
+            _lease = await _channelPool.RentAsync(cancellationToken);
+            _channel = _lease.Value.Channel;
+            var ch = _channel;
+
+            // 声明交换机
+            await _channel.ExchangeDeclareAsync(Exchange, ExchangeType, durable: true, autoDelete: false);
+
+            // 主队列参数（含可选死信参数）
             var args = new Dictionary<string, object?>();
             if (_options.EnableDeadLetter)
             {
                 args["x-dead-letter-exchange"] = _options.DeadLetterExchange;
-                args["x-dead-letter-routing-key"] = _options.DeadLetterQueue;
-                args["x-message-ttl"] = _options.DefaultMessageTTL;
+                args["x-dead-letter-routing-key"] = _options.DeadLetterRoutingKey;
+                if (_options.DefaultMessageTTL is { } ttl)
+                {
+                    args["x-message-ttl"] = (int)ttl.TotalMilliseconds;
+                }
 
-
-                await channel.ExchangeDeclareAsync(_options.DeadLetterExchange, ExchangeType.Direct, true, false);
-                await channel.QueueDeclareAsync(_options.DeadLetterQueue, true, false, false);
-                await channel.QueueBindAsync(_options.DeadLetterQueue, _options.DeadLetterExchange, _options.DeadLetterQueue);
+                // 声明死信交换机、队列并绑定
+                await _channel.ExchangeDeclareAsync(_options.DeadLetterExchange, RabbitMQ.Client.ExchangeType.Direct, durable: true, autoDelete: false);
+                await _channel.QueueDeclareAsync(_options.DeadLetterQueue, durable: true, exclusive: false, autoDelete: false);
+                await _channel.QueueBindAsync(_options.DeadLetterQueue, _options.DeadLetterExchange, _options.DeadLetterRoutingKey);
             }
 
+            // 声明主队列（带可选死信参数）
+            await _channel.QueueDeclareAsync(Queue, durable: true, exclusive: false, autoDelete: false, arguments: args);
 
-            // 3️ 绑定 Queue 到 Exchange
-            await channel.QueueBindAsync(
-                queue: Queue,
-                exchange: Exchange,
-                routingKey: RoutingKey,
-                arguments: null);
+            // 绑定主队列到交换机
+            await _channel.QueueBindAsync(queue: Queue, exchange: Exchange, routingKey: RoutingKey, arguments: null);
 
-            // 设置QoS，控制消息预取数量
-            await channel.BasicQosAsync(0, _options.PrefetchCount, false);
+            // 设置QoS
+            await _channel.BasicQosAsync(0, _options.PrefetchCount, false);
 
             // 创建异步事件消费者
-            var consumer = new AsyncEventingBasicConsumer(channel);
+            var consumer = new AsyncEventingBasicConsumer(_channel);
 
             // 注册消息接收事件处理
             consumer.ReceivedAsync += async (_, ea) =>
             {
                 try
                 {
-                    // 反序列化消息
                     var msg = JsonSerializer.Deserialize<T>(ea.Body.Span)!;
-                    // 处理消息
                     await HandleAsync(msg, cancellationToken);
-                    // 确认消息处理成功
-                    await channel.BasicAckAsync(ea.DeliveryTag, false);
+                    await ch.BasicAckAsync(ea.DeliveryTag, false);
                 }
                 catch
                 {
-                    // 消息处理失败，重新入队
-                    await channel.BasicNackAsync(ea.DeliveryTag, false, true);
+                    await ch.BasicNackAsync(ea.DeliveryTag, false, true);
                 }
             };
 
-            // 开始消费消息
-            await channel.BasicConsumeAsync(
+            // 开始消费消息，broker 返回实际消费者标签
+            _consumerTag = await _channel.BasicConsumeAsync(
                 queue: Queue,
                 autoAck: false,
                 consumerTag: string.Empty,
@@ -147,12 +138,40 @@ namespace AspNetCore.RabbitMq
         /// <summary>
         /// 处理接收到的消息
         /// </summary>
-        /// <param name="message">消息内容</param>
-        /// <param name="ct">取消令牌</param>
-        /// <returns>表示异步处理操作的任务</returns>
-        /// <remarks>
-        /// 子类必须实现此方法，处理具体的消息逻辑
-        /// </remarks>
         protected abstract Task HandleAsync(T message, CancellationToken ct);
+
+        /// <summary>
+        /// 停止消费者并归还通道租约
+        /// </summary>
+        /// <remarks>
+        /// 先 BasicCancel 停止消费，使通道不再有在途投递，归还后可被其他消费者复用。
+        /// </remarks>
+        public async ValueTask DisposeAsync()
+        {
+            if (_lease is not { } lease)
+            {
+                return;
+            }
+
+            var channel = _channel;
+            var tag = _consumerTag;
+            _lease = null;
+            _channel = null;
+            _consumerTag = null;
+
+            if (channel is not null && channel.IsOpen && tag is not null)
+            {
+                try
+                {
+                    await channel.BasicCancelAsync(tag, noWait: false, cancellationToken: default);
+                }
+                catch
+                {
+                    // 通道已关闭等情况忽略，归还时由池清理
+                }
+            }
+
+            await lease.DisposeAsync();
+        }
     }
 }

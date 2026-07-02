@@ -81,5 +81,15 @@ namespace AspNetCore.RabbitMq
         /// 上次发布失败的错误信息，未失败时为null
         /// </remarks>
         public string? LastError { get; set; }
+
+        /// <summary>
+        /// 下次允许重试时间，null 表示立即可重试
+        /// </summary>
+        public DateTimeOffset? NextAttemptAt { get; set; }
+
+        /// <summary>
+        /// 是否已转死信
+        /// </summary>
+        public bool DeadLettered { get; set; }
     }
 }

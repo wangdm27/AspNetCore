@@ -73,12 +73,22 @@ namespace AspNetCore.RabbitMq
             {
                 try
                 {
+                    // 当前时间，用于过滤未到重试时间的消息
+                    var now = DateTimeOffset.UtcNow;
+
                     // 从存储中获取待处理消息，限制批量大小
-                    var messages = await _store.GetPendingAsync(_options.OutboxBatchSize, stoppingToken);
-                    
+                    var messages = await _store.GetPendingAsync(now, _options.OutboxBatchSize, stoppingToken);
+
                     // 遍历处理每条消息
                     foreach (var message in messages)
                     {
+                        // 已达重试上限，直接转死信
+                        if (message.RetryCount >= _options.MaxRetryCount)
+                        {
+                            await DeadLetterAsync(message, "max retry count reached", stoppingToken);
+                            continue;
+                        }
+
                         try
                         {
                             // 发布消息到RabbitMQ
@@ -96,8 +106,25 @@ namespace AspNetCore.RabbitMq
                         {
                             // 记录发布失败的日志
                             _logger.LogWarning(ex, "Outbox message {OutboxMessageId} publish failed.", message.Id);
-                            // 标记消息为发布失败
-                            await _store.MarkAsFailedAsync(message.Id, ex.Message, stoppingToken);
+
+                            var newRetry = message.RetryCount + 1;
+                            if (newRetry >= _options.MaxRetryCount)
+                            {
+                                // 达到重试上限，转死信
+                                await DeadLetterAsync(message, ex.Message, stoppingToken);
+                            }
+                            else
+                            {
+                                // 指数退避：base * 2^newRetry，封顶 RetryMaxDelay
+                                var exp = Math.Min(newRetry, 30);
+                                var backoffTicks = Math.Min(
+                                    _options.RetryMaxDelay.Ticks,
+                                    _options.RetryBaseDelay.Ticks * (1L << exp));
+                                var nextAttempt = DateTimeOffset.UtcNow + TimeSpan.FromTicks(backoffTicks);
+
+                                // 标记失败，设置下次重试时间
+                                await _store.MarkAsFailedAsync(message.Id, ex.Message, nextAttempt, stoppingToken);
+                            }
                         }
                     }
                 }
@@ -117,6 +144,34 @@ namespace AspNetCore.RabbitMq
                     // 当收到停止信号时，退出循环
                     break;
                 }
+            }
+        }
+
+        /// <summary>
+        /// 将消息转死信：标记 DeadLettered 并尝试发布到死信交换机
+        /// </summary>
+        /// <param name="message">原消息</param>
+        /// <param name="reason">死信原因</param>
+        /// <param name="cancellationToken">取消令牌</param>
+        private async Task DeadLetterAsync(RabbitMqOutboxMessage message, string reason, CancellationToken cancellationToken)
+        {
+            await _store.MarkAsDeadLetterAsync(message.Id, cancellationToken);
+            _logger.LogWarning("Outbox message {OutboxMessageId} dead-lettered: {Reason}", message.Id, reason);
+
+            try
+            {
+                // 将原消息体发布到死信交换机（保留原 Headers）
+                await _publisher.PublishRawAsync(
+                    _options.DeadLetterExchange,
+                    _options.DeadLetterRoutingKey,
+                    message.Body,
+                    message.Headers,
+                    cancellationToken: cancellationToken);
+            }
+            catch (Exception dlx)
+            {
+                // 死信发布失败仅记日志，消息保持 DeadLettered 不再重试
+                _logger.LogWarning(dlx, "Dead-letter publish failed for outbox message {OutboxMessageId}.", message.Id);
             }
         }
     }

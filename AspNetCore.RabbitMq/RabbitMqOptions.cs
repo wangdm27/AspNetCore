@@ -94,5 +94,65 @@ namespace AspNetCore.RabbitMq
         /// 默认值: 100
         /// </remarks>
         public int OutboxBatchSize { get; set; } = 100;
+
+        /// <summary>
+        /// 是否启用死信队列
+        /// </summary>
+        /// <remarks>默认值: false</remarks>
+        public bool EnableDeadLetter { get; set; } = false;
+
+        /// <summary>
+        /// 死信交换机名称
+        /// </summary>
+        /// <remarks>默认值: string.Empty</remarks>
+        public string DeadLetterExchange { get; set; } = string.Empty;
+
+        /// <summary>
+        /// 死信路由键（修正原误用队列名作路由键的 bug）
+        /// </summary>
+        /// <remarks>默认值: string.Empty</remarks>
+        public string DeadLetterRoutingKey { get; set; } = string.Empty;
+
+        /// <summary>
+        /// 死信队列名称
+        /// </summary>
+        /// <remarks>默认值: string.Empty</remarks>
+        public string DeadLetterQueue { get; set; } = string.Empty;
+
+        /// <summary>
+        /// 消息默认存活时间（主队列 x-message-ttl），null 表示不设置
+        /// </summary>
+        /// <remarks>默认值: null</remarks>
+        public TimeSpan? DefaultMessageTTL { get; set; } = null;
+
+        /// <summary>
+        /// Outbox 最大重试次数
+        /// </summary>
+        /// <remarks>默认值: 5</remarks>
+        public int MaxRetryCount { get; set; } = 5;
+
+        /// <summary>
+        /// Outbox 重试退避基数
+        /// </summary>
+        /// <remarks>默认值: 5秒</remarks>
+        public TimeSpan RetryBaseDelay { get; set; } = TimeSpan.FromSeconds(5);
+
+        /// <summary>
+        /// Outbox 重试退避封顶
+        /// </summary>
+        /// <remarks>默认值: 5分钟</remarks>
+        public TimeSpan RetryMaxDelay { get; set; } = TimeSpan.FromMinutes(5);
+
+        /// <summary>
+        /// 消费者通道池大小
+        /// </summary>
+        /// <remarks>默认值: 16</remarks>
+        public int ConsumerChannelPoolSize { get; set; } = 16;
+
+        /// <summary>
+        /// 发布确认等待超时
+        /// </summary>
+        /// <remarks>默认值: 10秒</remarks>
+        public TimeSpan PublisherConfirmTimeout { get; set; } = TimeSpan.FromSeconds(10);
     }
 }
