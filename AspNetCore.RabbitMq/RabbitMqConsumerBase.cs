@@ -111,6 +111,9 @@ namespace AspNetCore.RabbitMq
             // 注册消息接收事件处理
             consumer.ReceivedAsync += async (_, ea) =>
             {
+                // 从消息头恢复 traceparent 链路：HandleAsync 内 Activity.Current.TraceId 与发布端一致，
+                // ILogger（经 ActivityTraceIdEnricher）按 TraceId 串联。using 确保回调结束恢复原 Activity
+                using var activity = RabbitMqTracing.ExtractAndStartActivity(ea.BasicProperties.Headers);
                 try
                 {
                     var msg = JsonSerializer.Deserialize<T>(ea.Body.Span)!;

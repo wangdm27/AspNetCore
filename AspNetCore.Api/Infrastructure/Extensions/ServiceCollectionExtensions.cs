@@ -1,9 +1,11 @@
 using AspNetCore.Api.Infrastructure.Auth;
 using AspNetCore.Api.Infrastructure.Context;
+using AspNetCore.Api.Infrastructure.Logging;
 using AspNetCore.Api.Infrastructure.Services;
 using AspNetCore.Api.Modules.Authorization.Services;
 using AspNetCore.Api.Modules.Identity.Services;
 using AspNetCore.Api.Modules.Tenancy.Services;
+using AspNetCore.Logging;
 using AspNetCore.RabbitMq;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -16,6 +18,8 @@ namespace AspNetCore.Api.Infrastructure.Extensions
         public static IServiceCollection AddBusinessModules(this IServiceCollection services, IConfiguration configuration)
         {
             services.AddHttpContextAccessor();
+            // 日志库用户上下文：HttpContextUserEnricher 在 host 启动后绑定此 provider，输出 UserId/TenantId
+            services.AddSingleton<IUserContextProvider, HttpContextUserContextProvider>();
             services.AddScoped<ICurrentRequestContext, CurrentRequestContext>();
             services.AddScoped<IPasswordHasher, Pbkdf2PasswordHasher>();
             services.AddScoped<ITokenService, JwtTokenService>();

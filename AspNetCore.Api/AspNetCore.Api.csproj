@@ -15,6 +15,7 @@
     <ProjectReference Include="..\\AspNetCore.DataAccess\\AspNetCore.DataAccess.csproj" />
     <ProjectReference Include="..\\AspNetCore.Events\\AspNetCore.Events.csproj" />
     <ProjectReference Include="..\\AspNetCore.RabbitMq\\AspNetCore.RabbitMq.csproj" />
+    <ProjectReference Include="..\\AspNetCore.Logging\\AspNetCore.Logging.csproj" />
   </ItemGroup>
 
 </Project>

@@ -85,6 +85,11 @@ namespace AspNetCore.RabbitMq
             };
             props?.Invoke(properties);
 
+            // 注入 W3C traceparent，消费端 RabbitMqTracing.ExtractAndStartActivity 恢复链路，
+            // 使 ILogger 输出的 TraceId 与发布端一致（Seq 按 TraceId 串联全链路）
+            properties.Headers ??= new Dictionary<string, object?>();
+            RabbitMqTracing.Inject(properties.Headers);
+
             ulong seq = 0;
             TaskCompletionSource<PublishConfirmResult>? tcs = null;
             if (confirm && tracker is not null)

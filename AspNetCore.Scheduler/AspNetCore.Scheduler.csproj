@@ -16,4 +16,8 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\\AspNetCore.Logging\\AspNetCore.Logging.csproj" />
+  </ItemGroup>
+
 </Project>

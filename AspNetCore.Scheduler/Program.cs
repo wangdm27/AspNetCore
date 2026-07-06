@@ -1,3 +1,4 @@
+using AspNetCore.Logging;
 using AspNetCore.Scheduler.Infrastructure;
 using AspNetCore.Scheduler.Infrastructure.Extensions;
 
@@ -20,6 +21,9 @@ public class Program
         await HangfireDbInitializer.EnsureDatabaseAsync(cfg);
 
         var hostBuilder = Host.CreateDefaultBuilder(args);
+
+        // Serilog 日志库：Console + File + Seq，TraceId 贯穿（Scheduler 为独立进程，TraceId 限进程内）
+        hostBuilder.UseAspNetCoreLogging();
 
         // 复合 host: 默认 builder (IHostBuilder) 嵌 Kestrel 暴露 Dashboard
         hostBuilder.ConfigureSchedulerWebHost();

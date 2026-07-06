@@ -2,6 +2,7 @@
 using AspNetCore.DataAccess;
 using AspNetCore.Api.Infrastructure.Extensions;
 using AspNetCore.Api.Infrastructure.Middleware;
+using AspNetCore.Logging;
 
 namespace AspNetCore.Api
 {
@@ -19,6 +20,9 @@ namespace AspNetCore.Api
             builder.Services.AddUnifiedDataAccess<ApplicationDbContext>(builder.Configuration);
             builder.Services.AddAuthorization();
             builder.Services.AddBusinessModules(builder.Configuration);
+
+            // Serilog 日志库：Console + File + Seq，TraceId 全链路贯通（Api→MQ→EventDriven），UserId/TenantId enrichment
+            builder.UseAspNetCoreLogging();
 
             builder.Services.AddCors(options =>
             {
