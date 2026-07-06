@@ -4,6 +4,7 @@ using AspNetCore.Api.Infrastructure.Services;
 using AspNetCore.Api.Modules.Authorization.Services;
 using AspNetCore.Api.Modules.Identity.Services;
 using AspNetCore.Api.Modules.Tenancy.Services;
+using AspNetCore.RabbitMq;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
@@ -63,6 +64,24 @@ namespace AspNetCore.Api.Infrastructure.Extensions
                 });
 
             services.AddHostedService<DatabaseInitializationHostedService>();
+
+            // RabbitMQ 基建 + 事件总线（发布端）。Api 仅发布，不注册任何消费者。
+            var rmq = configuration.GetSection("RabbitMq");
+            services.AddUnifiedRabbitMq(opt =>
+            {
+                opt.HostName = rmq["HostName"] ?? "localhost";
+                opt.Port = rmq.GetValue<int?>("Port") ?? 5672;
+                opt.UserName = rmq["UserName"] ?? "guest";
+                opt.Password = rmq["Password"] ?? "guest";
+                opt.VirtualHost = rmq["VirtualHost"] ?? "/";
+                opt.ChannelPoolSize = rmq.GetValue<int?>("ChannelPoolSize") ?? 16;
+            });
+            services.AddRabbitMqEventBus(opt =>
+            {
+                opt.ExchangePrefix = configuration["EventBus:ExchangePrefix"] ?? "evt.";
+                opt.QueuePrefix = configuration["EventBus:QueuePrefix"] ?? "q.";
+                opt.ExchangeType = configuration["EventBus:ExchangeType"] ?? "direct";
+            });
 
             return services;
         }

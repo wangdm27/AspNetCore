@@ -1,3 +1,4 @@
+using AspNetCore.Events;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -37,6 +38,21 @@ namespace AspNetCore.RabbitMq
             services.AddSingleton<IRabbitMqOutbox, RabbitMqOutbox>();
             services.AddHostedService<RabbitMqOutboxDispatcher>();
 
+            return services;
+        }
+
+        /// <summary>
+        /// 注册 <see cref="IEventBus"/> 的 RabbitMQ 实现。需先调 <see cref="AddUnifiedRabbitMq"/>。
+        /// 按 <see cref="EventBusOptions"/> 命名约定自动算 exchange/routingKey，屏蔽 AMQP 细节。
+        /// </summary>
+        public static IServiceCollection AddRabbitMqEventBus(
+            this IServiceCollection services,
+            Action<EventBusOptions>? configure = null)
+        {
+            var opts = new EventBusOptions();
+            configure?.Invoke(opts);
+            services.AddSingleton(opts);
+            services.AddSingleton<IEventBus, RabbitMqEventBus>();
             return services;
         }
     }
