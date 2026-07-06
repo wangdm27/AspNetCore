@@ -15,6 +15,7 @@
 | [03-Redis-缓存库.md](./03-Redis-缓存库.md) | Redis 客户端封装（键前缀、序列化、分布式锁） |
 | [04-Api-应用服务层.md](./04-Api-应用服务层.md) | Web API（认证授权、多租户、审计、邮件、模块化业务） |
 | [05-Test-测试项目.md](./05-Test-测试项目.md) | 控制台测试项目（RabbitMQ 原生示例、库集成示例） |
+| [06-Scheduler-定时任务.md](./06-Scheduler-定时任务.md) | Hangfire 定时任务主机（PostgreSQL 存储、Dashboard、自动建库、周期 Job） |
 
 ## 阅读约定
 
