@@ -30,7 +30,7 @@ public class JsonRedisSerializer : IRedisSerializer
     /// </summary>
     /// <typeparam name="T">要反序列化的目标类型</typeparam>
     /// <param name="value">要反序列化的 JSON 字符串</param>
-    /// <returns>反序列化后的对象，如果反序列化失败则返回 null</returns>
+    /// <returns>反序列化后的对象；反序列化失败时抛出 <see cref="System.Text.Json.JsonException"/>（不返回 null）</returns>
     public T? Deserialize<T>(string value)
         => JsonSerializer.Deserialize<T>(value, Options);
 }

@@ -43,7 +43,7 @@ public static class HangfireDbInitializer
     }
 
     /// <summary>从 Npgsql 连接串提取 Database 段。</summary>
-    private static string? ExtractDatabaseName(string connStr)
+    internal static string? ExtractDatabaseName(string connStr)
     {
         // 兼容 Database=xxx 与 database=xxx
         var match = Regex.Match(connStr, @"[Dd]atabase=([^;]+)");
@@ -51,6 +51,6 @@ public static class HangfireDbInitializer
     }
 
     /// <summary>库名仅允许字母数字下划线,防 SQL 注入 (CREATE DATABASE 不支持参数化)。</summary>
-    private static bool IsValidDbName(string name)
+    internal static bool IsValidDbName(string name)
         => Regex.IsMatch(name, @"^[A-Za-z0-9_]+$");
 }
