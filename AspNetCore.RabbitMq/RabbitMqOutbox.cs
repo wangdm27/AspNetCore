@@ -37,12 +37,9 @@ namespace AspNetCore.RabbitMq
         /// <param name="cancellationToken">取消令牌</param>
         /// <returns>表示异步入队操作的任务</returns>
         /// <remarks>
-        /// 此方法执行以下操作：
-        /// 1. 创建消息属性对象
-        /// 2. 应用自定义属性配置
-        /// 3. 序列化消息内容为JSON字节
-        /// 4. 创建发件箱消息对象
-        /// 5. 将消息添加到存储中
+        /// 在请求上下文捕获 W3C traceparent 与关键 BasicProperties（ContentType/CorrelationId/MessageId）持久化进发件箱：
+        /// dispatcher 后台发布时已脱离原请求上下文（<c>Activity.Current</c> 为 null），必须在此处保存，
+        /// 消费端才能延续 TraceId，Seq 方可按 TraceId 串联 Api->MQ->消费 全链路。
         /// </remarks>
         /// <exception cref="ArgumentNullException">当exchange或routingKey为null时抛出</exception>
         /// <exception cref="ArgumentException">当exchange或routingKey为空字符串时抛出</exception>
@@ -53,24 +50,28 @@ namespace AspNetCore.RabbitMq
             Action<IBasicProperties>? props = null,
             CancellationToken cancellationToken = default)
         {
-            // 创建消息属性对象
+            ArgumentException.ThrowIfNullOrEmpty(exchange);
+            ArgumentException.ThrowIfNullOrEmpty(routingKey);
+
             var properties = new BasicProperties();
-            // 应用自定义属性配置
             props?.Invoke(properties);
 
-            // 创建发件箱消息对象
+            // 捕获请求上下文 traceparent：dispatcher 发布时 Activity.Current 已非原请求，必须在此持久化
+            var headers = properties.Headers?.ToDictionary(static kvp => kvp.Key, static kvp => kvp.Value)
+                          ?? new Dictionary<string, object?>();
+            RabbitMqTracing.Inject(headers);
+
             var outboxMessage = new RabbitMqOutboxMessage
             {
                 Exchange = exchange,
                 RoutingKey = routingKey,
-                // 序列化消息为JSON字节
                 Body = JsonSerializer.SerializeToUtf8Bytes(message),
-                // 处理消息头
-                Headers = properties.Headers?.ToDictionary(static kvp => kvp.Key, static kvp => kvp.Value)
-                    ?? new Dictionary<string, object?>()
+                Headers = headers,
+                ContentType = properties.ContentType,
+                CorrelationId = properties.CorrelationId,
+                MessageId = properties.MessageId
             };
 
-            // 将消息添加到存储
             await _store.AddAsync(outboxMessage, cancellationToken);
         }
     }

@@ -150,9 +150,109 @@ namespace AspNetCore.RabbitMq
         public int ConsumerChannelPoolSize { get; set; } = 16;
 
         /// <summary>
+        /// 消费者单条消息最大重试次数。超过后 nack(requeue:false) 交死信队列或丢弃，避免毒消息死循环。
+        /// </summary>
+        /// <remarks>默认值: 5。内存 best-effort 计数，进程重启重置。</remarks>
+        public int ConsumerMaxRetryCount { get; set; } = 5;
+
+        /// <summary>
         /// 发布确认等待超时
         /// </summary>
         /// <remarks>默认值: 10秒</remarks>
         public TimeSpan PublisherConfirmTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
+        /// <summary>
+        /// 校验配置合法性。非法抛 <see cref="ArgumentException"/>。由 <c>AddUnifiedRabbitMq</c> 在装配时调用。
+        /// </summary>
+        /// <exception cref="ArgumentException">任一规则不满足时抛出。</exception>
+        public void Validate()
+        {
+            if (string.IsNullOrWhiteSpace(HostName))
+            {
+                throw new ArgumentException($"{nameof(HostName)} 不能为空。", nameof(HostName));
+            }
+
+            if (Port is < 1 or > 65535)
+            {
+                throw new ArgumentException($"{nameof(Port)} 必须在 1..65535，当前 {Port}。", nameof(Port));
+            }
+
+            if (PrefetchCount < 1)
+            {
+                throw new ArgumentException($"{nameof(PrefetchCount)} 必须 >= 1（0 在 AMQP 为无限，大流量下消费者内存失控），当前 {PrefetchCount}。", nameof(PrefetchCount));
+            }
+
+            if (ChannelPoolSize < 1)
+            {
+                throw new ArgumentException($"{nameof(ChannelPoolSize)} 必须 >= 1，当前 {ChannelPoolSize}。", nameof(ChannelPoolSize));
+            }
+
+            if (ConsumerChannelPoolSize < 1)
+            {
+                throw new ArgumentException($"{nameof(ConsumerChannelPoolSize)} 必须 >= 1，当前 {ConsumerChannelPoolSize}。", nameof(ConsumerChannelPoolSize));
+            }
+
+            if (MaxRetryCount < 1)
+            {
+                throw new ArgumentException($"{nameof(MaxRetryCount)} 必须 >= 1，否则消息未经发布尝试即转死信，当前 {MaxRetryCount}。", nameof(MaxRetryCount));
+            }
+
+            if (ConsumerMaxRetryCount < 1)
+            {
+                throw new ArgumentException($"{nameof(ConsumerMaxRetryCount)} 必须 >= 1，当前 {ConsumerMaxRetryCount}。", nameof(ConsumerMaxRetryCount));
+            }
+
+            if (RetryBaseDelay < TimeSpan.Zero)
+            {
+                throw new ArgumentException($"{nameof(RetryBaseDelay)} 不能为负，当前 {RetryBaseDelay}。", nameof(RetryBaseDelay));
+            }
+
+            if (RetryMaxDelay <= TimeSpan.Zero)
+            {
+                throw new ArgumentException($"{nameof(RetryMaxDelay)} 必须为正，当前 {RetryMaxDelay}。", nameof(RetryMaxDelay));
+            }
+
+            if (PublisherConfirmTimeout <= TimeSpan.Zero)
+            {
+                throw new ArgumentException($"{nameof(PublisherConfirmTimeout)} 必须为正，当前 {PublisherConfirmTimeout}。", nameof(PublisherConfirmTimeout));
+            }
+
+            if (OutboxBatchSize < 1)
+            {
+                throw new ArgumentException($"{nameof(OutboxBatchSize)} 必须 >= 1，当前 {OutboxBatchSize}。", nameof(OutboxBatchSize));
+            }
+
+            if (DefaultMessageTTL is { } ttl)
+            {
+                // x-message-ttl 为 32 位毫秒，> 24.85 天溢出
+                if (ttl <= TimeSpan.Zero)
+                {
+                    throw new ArgumentException($"{nameof(DefaultMessageTTL)} 必须为正，当前 {ttl}。", nameof(DefaultMessageTTL));
+                }
+
+                if (ttl > TimeSpan.FromMilliseconds(int.MaxValue))
+                {
+                    throw new ArgumentException($"{nameof(DefaultMessageTTL)} 超过 int.MaxValue 毫秒（约 24.85 天）上限，当前 {ttl}。", nameof(DefaultMessageTTL));
+                }
+            }
+
+            if (EnableDeadLetter)
+            {
+                if (string.IsNullOrEmpty(DeadLetterExchange))
+                {
+                    throw new ArgumentException($"启用 {nameof(EnableDeadLetter)} 时 {nameof(DeadLetterExchange)} 必须非空。", nameof(DeadLetterExchange));
+                }
+
+                if (string.IsNullOrEmpty(DeadLetterQueue))
+                {
+                    throw new ArgumentException($"启用 {nameof(EnableDeadLetter)} 时 {nameof(DeadLetterQueue)} 必须非空。", nameof(DeadLetterQueue));
+                }
+
+                if (string.IsNullOrEmpty(DeadLetterRoutingKey))
+                {
+                    throw new ArgumentException($"启用 {nameof(EnableDeadLetter)} 时 {nameof(DeadLetterRoutingKey)} 必须非空。", nameof(DeadLetterRoutingKey));
+                }
+            }
+        }
     }
 }

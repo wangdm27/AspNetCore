@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using RabbitMQ.Client;
 
 namespace AspNetCore.RabbitMq
 {
@@ -50,6 +51,13 @@ namespace AspNetCore.RabbitMq
             _publisher = publisher;
             _options = options;
             _logger = logger;
+
+            if (store is InMemoryRabbitMqOutboxStore)
+            {
+                _logger.LogWarning(
+                    "InMemory outbox store in use; not durable across restarts. " +
+                    "Register a persistent IRabbitMqOutboxStore for production.");
+            }
         }
 
         /// <summary>
@@ -91,20 +99,18 @@ namespace AspNetCore.RabbitMq
 
                         try
                         {
-                            // 发布消息到RabbitMQ
                             await _publisher.PublishRawAsync(
                                 message.Exchange,
                                 message.RoutingKey,
                                 message.Body,
                                 message.Headers,
+                                props: BuildPropsCallback(message),
                                 cancellationToken: stoppingToken);
 
-                            // 标记消息为已发布
                             await _store.MarkAsPublishedAsync(message.Id, DateTimeOffset.UtcNow, stoppingToken);
                         }
                         catch (Exception ex)
                         {
-                            // 记录发布失败的日志
                             _logger.LogWarning(ex, "Outbox message {OutboxMessageId} publish failed.", message.Id);
 
                             var newRetry = message.RetryCount + 1;
@@ -122,7 +128,6 @@ namespace AspNetCore.RabbitMq
                                     _options.RetryBaseDelay.Ticks * (1L << exp));
                                 var nextAttempt = DateTimeOffset.UtcNow + TimeSpan.FromTicks(backoffTicks);
 
-                                // 标记失败，设置下次重试时间
                                 await _store.MarkAsFailedAsync(message.Id, ex.Message, nextAttempt, stoppingToken);
                             }
                         }
@@ -153,19 +158,31 @@ namespace AspNetCore.RabbitMq
         /// <param name="message">原消息</param>
         /// <param name="reason">死信原因</param>
         /// <param name="cancellationToken">取消令牌</param>
+        /// <remarks>
+        /// <see cref="RabbitMqOptions.DeadLetterExchange"/> 为空时不发布，消息保持 DeadLettered 不丢失（仅记告警），
+        /// 避免向默认空交换机投递被 broker 静默丢弃。
+        /// </remarks>
         private async Task DeadLetterAsync(RabbitMqOutboxMessage message, string reason, CancellationToken cancellationToken)
         {
             await _store.MarkAsDeadLetterAsync(message.Id, cancellationToken);
             _logger.LogWarning("Outbox message {OutboxMessageId} dead-lettered: {Reason}", message.Id, reason);
 
+            if (string.IsNullOrEmpty(_options.DeadLetterExchange))
+            {
+                _logger.LogWarning(
+                    "Outbox message {OutboxMessageId} held as DeadLettered: no DeadLetterExchange configured, not forwarded.",
+                    message.Id);
+                return;
+            }
+
             try
             {
-                // 将原消息体发布到死信交换机（保留原 Headers）
                 await _publisher.PublishRawAsync(
                     _options.DeadLetterExchange,
                     _options.DeadLetterRoutingKey,
                     message.Body,
                     message.Headers,
+                    props: BuildPropsCallback(message),
                     cancellationToken: cancellationToken);
             }
             catch (Exception dlx)
@@ -174,5 +191,26 @@ namespace AspNetCore.RabbitMq
                 _logger.LogWarning(dlx, "Dead-letter publish failed for outbox message {OutboxMessageId}.", message.Id);
             }
         }
+
+        /// <summary>
+        /// 构造发布属性回调：从 outbox 消息重建非 Header 的 BasicProperties 字段（ContentType/CorrelationId/MessageId）。
+        /// </summary>
+        private static Action<IBasicProperties> BuildPropsCallback(RabbitMqOutboxMessage message) => properties =>
+        {
+            if (!string.IsNullOrEmpty(message.ContentType))
+            {
+                properties.ContentType = message.ContentType;
+            }
+
+            if (!string.IsNullOrEmpty(message.CorrelationId))
+            {
+                properties.CorrelationId = message.CorrelationId;
+            }
+
+            if (!string.IsNullOrEmpty(message.MessageId))
+            {
+                properties.MessageId = message.MessageId;
+            }
+        };
     }
 }

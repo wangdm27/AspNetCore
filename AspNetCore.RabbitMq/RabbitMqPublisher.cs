@@ -80,15 +80,26 @@ namespace AspNetCore.RabbitMq
 
             var properties = new BasicProperties
             {
-                Persistent = true,
-                Headers = headersDict
+                Persistent = true
             };
             props?.Invoke(properties);
 
-            // 注入 W3C traceparent，消费端 RabbitMqTracing.ExtractAndStartActivity 恢复链路，
-            // 使 ILogger 输出的 TraceId 与发布端一致（Seq 按 TraceId 串联全链路）
+            // 合并 Headers：调用方 props 显式设置的优先，入参 headers / x-delay 补缺（避免回调整体替换导致丢失）
             properties.Headers ??= new Dictionary<string, object?>();
-            RabbitMqTracing.Inject(properties.Headers);
+            foreach (var kvp in headersDict)
+            {
+                if (!properties.Headers.ContainsKey(kvp.Key))
+                {
+                    properties.Headers[kvp.Key] = kvp.Value;
+                }
+            }
+
+            // traceparent 仅在缺失时注入：outbox 路径已携带入队时的父链路，不覆盖；直发路径注入当前 Activity。
+            // 消费端 RabbitMqTracing.ExtractAndStartActivity 据此延续 TraceId，ILogger 经 ActivityTraceIdEnricher 串联 Seq 全链路。
+            if (!properties.Headers.ContainsKey(RabbitMqTracing.TraceParentHeader))
+            {
+                RabbitMqTracing.Inject(properties.Headers);
+            }
 
             ulong seq = 0;
             TaskCompletionSource<PublishConfirmResult>? tcs = null;

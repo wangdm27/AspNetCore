@@ -49,7 +49,22 @@ namespace AspNetCore.RabbitMq
         /// 消息的附加属性，默认为空字典
         /// </remarks>
         public Dictionary<string, object?> Headers { get; init; } = new();
-        
+
+        /// <summary>
+        /// 消息内容类型（对应 <c>IBasicProperties.ContentType</c>），发布时重建。null 表示未设置。
+        /// </summary>
+        public string? ContentType { get; init; }
+
+        /// <summary>
+        /// 关联标识（对应 <c>IBasicProperties.CorrelationId</c>），发布时重建。null 表示未设置。
+        /// </summary>
+        public string? CorrelationId { get; init; }
+
+        /// <summary>
+        /// 消息标识（对应 <c>IBasicProperties.MessageId</c>），发布时重建；消费者可用作重试计数 key。null 表示未设置。
+        /// </summary>
+        public string? MessageId { get; init; }
+
         /// <summary>
         /// 创建时间
         /// </summary>

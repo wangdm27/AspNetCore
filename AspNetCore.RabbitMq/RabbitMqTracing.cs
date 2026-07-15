@@ -17,7 +17,11 @@ internal static class RabbitMqTracing
 {
     private const string ActivitySourceName = "AspNetCore.RabbitMq";
     private const string ConsumeActivityName = "RabbitMq.Consume";
-    private const string TraceParentHeader = "traceparent";
+
+    /// <summary>
+    /// W3C traceparent 消息头键名，发布端注入 / 消费端提取均用此键。
+    /// </summary>
+    public const string TraceParentHeader = "traceparent";
 
     private static readonly ActivitySource _activitySource = new(ActivitySourceName);
 

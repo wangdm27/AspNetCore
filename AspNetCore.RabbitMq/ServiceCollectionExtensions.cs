@@ -10,8 +10,11 @@ namespace AspNetCore.RabbitMq
             this IServiceCollection services,
             Action<RabbitMqOptions> configure)
         {
+            ArgumentNullException.ThrowIfNull(configure);
+
             var options = new RabbitMqOptions();
             configure(options);
+            options.Validate();
 
             services.AddSingleton(options);
             services.AddSingleton<IRabbitMqConnection, RabbitMqConnection>();
@@ -22,11 +25,12 @@ namespace AspNetCore.RabbitMq
                     sp.GetRequiredService<IRabbitMqConnection>(),
                     options.ChannelPoolSize));
 
-            // 消费者通道池
+            // 消费者通道池（不发布，关闭 publisher confirm 以省开销）
             services.AddKeyedSingleton<IRabbitMqChannelPool>("consumer", (sp, _) =>
                 new RabbitMqChannelPool(
                     sp.GetRequiredService<IRabbitMqConnection>(),
-                    options.ConsumerChannelPoolSize));
+                    options.ConsumerChannelPoolSize,
+                    enableConfirms: false));
 
             // 发布者注入发布者池与配置
             services.AddSingleton<IRabbitMqPublisher>(sp =>

@@ -26,7 +26,7 @@ namespace AspNetCore.RabbitMq
     {
         private readonly IRabbitMqChannelPoolLease _lease;
 
-        internal PooledChannelLease(IChannel channel, ChannelConfirmTracker tracker, IRabbitMqChannelPoolLease lease)
+        internal PooledChannelLease(IChannel channel, ChannelConfirmTracker? tracker, IRabbitMqChannelPoolLease lease)
         {
             Channel = channel;
             Tracker = tracker;
@@ -46,7 +46,7 @@ namespace AspNetCore.RabbitMq
         /// <summary>
         /// 释放租约并将信道归还给池（不会直接关闭信道）。
         /// </summary>
-        public ValueTask DisposeAsync() => _lease.ReturnAsync(Channel, Tracker!);
+        public ValueTask DisposeAsync() => _lease.ReturnAsync(Channel, Tracker);
     }
 
     /// <summary>
@@ -55,8 +55,8 @@ namespace AspNetCore.RabbitMq
     internal interface IRabbitMqChannelPoolLease
     {
         /// <summary>
-        /// 将租借的信道与追踪器归还到池中。
+        /// 将租借的信道与追踪器归还到池中。tracker 为 null 表示该信道未启用发布确认（如消费者池）。
         /// </summary>
-        ValueTask ReturnAsync(IChannel channel, ChannelConfirmTracker tracker);
+        ValueTask ReturnAsync(IChannel channel, ChannelConfirmTracker? tracker);
     }
 }
