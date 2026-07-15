@@ -339,4 +339,42 @@ public class RabbitMqOutboxDispatcherTests
             It.IsAny<IDictionary<string, object?>?>(), It.IsAny<Action<IBasicProperties>?>(),
             It.IsAny<bool>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()), Times.Never);
     }
+
+    [Fact]
+    public async Task ExecuteAsync_DeadLetterWithEmptyDlx_MarksAsDeadLetterWithoutPublishing()
+    {
+        // Arrange - H3：DeadLetterExchange 为空，重试耗尽转死信时不发布（避免向默认空交换机投递被静默丢弃）
+        var storeMock = new Mock<IRabbitMqOutboxStore>();
+        var publisherMock = SetupPublisher();
+        var options = CreateOptions();
+        options.DeadLetterExchange = "";
+        options.DeadLetterRoutingKey = "";
+        var logger = NullLogger<RabbitMqOutboxDispatcher>.Instance;
+        var msg = NewMessage(retryCount: 5);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+
+        storeMock.Setup(s => s.GetPendingAsync(
+                It.IsAny<DateTimeOffset>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<RabbitMqOutboxMessage> { msg });
+
+        storeMock.Setup(s => s.MarkAsDeadLetterAsync(
+                It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .Callback(() => cts.Cancel())
+            .Returns(Task.CompletedTask);
+
+        var dispatcher = new RabbitMqOutboxDispatcher(
+            storeMock.Object, publisherMock.Object, options, logger);
+
+        // Act
+        await InvokeExecuteAsync(dispatcher, cts.Token);
+
+        // Assert - 标记死信一次；完全不发布（既不原交换机，也不死信交换机）
+        storeMock.Verify(s => s.MarkAsDeadLetterAsync(
+            msg.Id, It.IsAny<CancellationToken>()), Times.Once);
+        publisherMock.Verify(p => p.PublishRawAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<ReadOnlyMemory<byte>>(),
+            It.IsAny<IDictionary<string, object?>?>(), It.IsAny<Action<IBasicProperties>?>(),
+            It.IsAny<bool>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
 }

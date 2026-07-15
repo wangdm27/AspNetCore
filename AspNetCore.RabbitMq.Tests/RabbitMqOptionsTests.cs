@@ -102,4 +102,124 @@ public class RabbitMqOptionsTests
         opts.DeadLetterQueue.Should().Be("dlq");
         opts.DefaultMessageTTL.Should().Be(TimeSpan.FromMinutes(2));
     }
+
+    [Fact]
+    public void Validate_DefaultOptions_DoesNotThrow()
+    {
+        // Arrange
+        var opts = new RabbitMqOptions();
+
+        // Act
+        var act = () => opts.Validate();
+
+        // Assert - 默认值合法（EnableDeadLetter=false，不校验死信项）
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Validate_EnableDeadLetterWithCompleteConfig_DoesNotThrow()
+    {
+        // Arrange
+        var opts = new RabbitMqOptions
+        {
+            EnableDeadLetter = true,
+            DeadLetterExchange = "dlx",
+            DeadLetterQueue = "dlq",
+            DeadLetterRoutingKey = "dlk"
+        };
+
+        // Act
+        var act = () => opts.Validate();
+
+        // Assert
+        act.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData(nameof(RabbitMqOptions.ChannelPoolSize), 0)]
+    [InlineData(nameof(RabbitMqOptions.ConsumerChannelPoolSize), 0)]
+    [InlineData(nameof(RabbitMqOptions.MaxRetryCount), 0)]
+    [InlineData(nameof(RabbitMqOptions.ConsumerMaxRetryCount), 0)]
+    [InlineData(nameof(RabbitMqOptions.OutboxBatchSize), 0)]
+    public void Validate_NonPositiveNumericFields_Throw(string fieldName, int badValue)
+    {
+        // Arrange
+        var opts = new RabbitMqOptions();
+        typeof(RabbitMqOptions).GetProperty(fieldName)!.SetValue(opts, badValue);
+
+        // Act
+        var act = () => opts.Validate();
+
+        // Assert
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Validate_EmptyHostName_Throws(string host)
+    {
+        var opts = new RabbitMqOptions { HostName = host };
+        var act = () => opts.Validate();
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(65536)]
+    [InlineData(-1)]
+    public void Validate_PortOutOfRange_Throws(int port)
+    {
+        var opts = new RabbitMqOptions { Port = port };
+        var act = () => opts.Validate();
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void Validate_PrefetchCountZero_Throws()
+    {
+        // PrefetchCount 为 ushort，0 在 AMQP 为无限（流控失效），库契约不允许
+        var opts = new RabbitMqOptions { PrefetchCount = 0 };
+        var act = () => opts.Validate();
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void Validate_NegativeRetryBaseDelay_Throws()
+    {
+        var opts = new RabbitMqOptions { RetryBaseDelay = TimeSpan.FromSeconds(-1) };
+        var act = () => opts.Validate();
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void Validate_ZeroRetryMaxDelay_Throws()
+    {
+        var opts = new RabbitMqOptions { RetryMaxDelay = TimeSpan.Zero };
+        var act = () => opts.Validate();
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void Validate_EnableDeadLetterWithEmptyExchange_Throws()
+    {
+        var opts = new RabbitMqOptions
+        {
+            EnableDeadLetter = true,
+            DeadLetterExchange = "",
+            DeadLetterQueue = "dlq",
+            DeadLetterRoutingKey = "dlk"
+        };
+        var act = () => opts.Validate();
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void Validate_TooLargeMessageTTL_Throws()
+    {
+        // Arrange - 超过 int.MaxValue 毫秒（约 24.85 天）溢出 x-message-ttl
+        var opts = new RabbitMqOptions { DefaultMessageTTL = TimeSpan.FromDays(30) };
+        var act = () => opts.Validate();
+        act.Should().Throw<ArgumentException>();
+    }
 }
