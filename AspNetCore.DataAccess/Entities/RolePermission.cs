@@ -1,17 +1,14 @@
-using System.ComponentModel.DataAnnotations.Schema;
-
 namespace AspNetCore.DataAccess.Entities
 {
-    [Table("role_permissions")]
+    /// <summary>
+    /// 角色-权限关联实体；数据库映射见 Configurations/RolePermissionConfiguration
+    /// </summary>
     public sealed class RolePermission
     {
-        [Column("role_id")]
         public Guid RoleId { get; set; }
 
-        [Column("permission_id")]
         public Guid PermissionId { get; set; }
 
-        [Column("granted_at")]
         public DateTime GrantedAt { get; set; }
 
         public Role? Role { get; set; }

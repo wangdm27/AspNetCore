@@ -44,7 +44,7 @@ namespace AspNetCore.DataAccess
             }
             else
             {
-                RegisterDapper(services);
+                RegisterDapper<TDbContext>(services);
             }
 
             return services;
@@ -68,9 +68,12 @@ namespace AspNetCore.DataAccess
         /// <summary>
         /// 注册 Dapper 相关服务
         /// </summary>
+        /// <typeparam name="TDbContext">Entity Framework Core 数据库上下文类型，用于提供实体映射总账</typeparam>
         /// <param name="services">服务集合</param>
-        private static void RegisterDapper(IServiceCollection services)
+        private static void RegisterDapper<TDbContext>(IServiceCollection services)
+            where TDbContext : DbContext
         {
+            services.AddScoped<IEntityMappingProvider, EfEntityMappingProvider<TDbContext>>();
             services.AddScoped<IDapperContext, DapperContext>();
             services.AddScoped(typeof(IRepository<>), typeof(DapperRepository<>));
             services.AddScoped<IUnitOfWork, DapperUnitOfWork>();

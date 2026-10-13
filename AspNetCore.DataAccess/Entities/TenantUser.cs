@@ -1,20 +1,16 @@
-using System.ComponentModel.DataAnnotations.Schema;
-
 namespace AspNetCore.DataAccess.Entities
 {
-    [Table("tenant_users")]
+    /// <summary>
+    /// 租户-用户关联实体；数据库映射见 Configurations/TenantUserConfiguration
+    /// </summary>
     public sealed class TenantUser
     {
-        [Column("tenant_id")]
         public Guid TenantId { get; set; }
 
-        [Column("user_id")]
         public Guid UserId { get; set; }
 
-        [Column("is_tenant_owner")]
         public bool IsTenantOwner { get; set; }
 
-        [Column("joined_at")]
         public DateTime JoinedAt { get; set; }
 
         public Tenant? Tenant { get; set; }

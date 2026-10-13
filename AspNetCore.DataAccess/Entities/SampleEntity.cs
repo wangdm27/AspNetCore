@@ -1,20 +1,14 @@
-using System.ComponentModel.DataAnnotations;
-using System.ComponentModel.DataAnnotations.Schema;
-
 namespace AspNetCore.DataAccess.Entities
 {
-    [Table("sample_entities")]
+    /// <summary>
+    /// 示例实体；数据库映射见 Configurations/SampleEntityConfiguration
+    /// </summary>
     public sealed class SampleEntity
     {
-        [Key]
-        [Column("id")]
         public Guid Id { get; set; }
 
-        [MaxLength(100)]
-        [Column("name")]
         public string Name { get; set; } = string.Empty;
 
-        [Column("created_at")]
         public DateTime CreatedAt { get; set; }
     }
 }
